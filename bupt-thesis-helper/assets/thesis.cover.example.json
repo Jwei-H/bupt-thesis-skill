@@ -1,0 +1,21 @@
+{
+  "_comments": {
+    "purpose": "填写北邮论文第一页封面信息。留空时脚本会保留横线占位。year/month 不需要填写，导出时会自动使用当前日期。",
+    "fields": {
+      "title": "论文题目",
+      "name": "姓名",
+      "school": "学院",
+      "major": "专业",
+      "class": "班级号；compose_docx.js 仍兼容旧的 className 字段",
+      "studentId": "学号",
+      "advisor": "指导教师"
+    }
+  },
+  "title": "",
+  "name": "",
+  "school": "",
+  "major": "",
+  "class": "",
+  "studentId": "",
+  "advisor": ""
+}
