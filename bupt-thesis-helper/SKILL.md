@@ -24,6 +24,7 @@ description: Use this skill for the BUPT thesis workflow in this repository: run
 3. **多级标题的“含义约定”由 LLM 复核。** 检查脚本只能抽取和校验标题结构；对于“这个标题层级是否符合我们当前约定”的判断，必须结合 `headings` 输出由 LLM 继续复核。
 4. **检查完先汇报，再询问是否修复。** 当脚本检查完成后，先总结错误/警告与标题树结论，再询问用户是否开始修复，不要默认直接改论文。
 5. **始终显式指定文件路径。** 所有脚本必须明确传入输入的 Markdown 路径，系统不提供任何默认文件名回退。调用脚本前，必须首先确认要处理的 Markdown 文件路径。
+6. **关注参考文献余量与补充 SOP。** 当用户显式要求补充参考文献，或者你观察到参考文献数量低于 15 个时，应主动询问用户是否需要帮忙补充文献。如果用户确认，在操作前**必须**前往查阅并遵循 \`bupt-thesis-helper/references/add-references.md\` 规范。
 
 ## Dependencies
 
