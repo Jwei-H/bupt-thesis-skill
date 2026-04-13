@@ -54,7 +54,11 @@ async function main() {
   const skillRoot = path.resolve(__dirname, '..');
   const args = parseArgs(process.argv.slice(2));
   const workspace = path.resolve(args.workspace || process.cwd());
-  const markdownInput = args.input || args.markdown || args._[0] || 'thesis.md';
+  const markdownInput = args.input || args.markdown || args._[0];
+  if (!markdownInput) {
+    console.error('错误: 请指定输入的 Markdown 文件路径。');
+    process.exit(1);
+  }
   const markdownPath = path.resolve(workspace, markdownInput);
   const generatorPath = path.resolve(skillRoot, 'scripts', 'generate_thesis.js');
   const composerPath = path.resolve(skillRoot, 'scripts', 'compose_docx.js');

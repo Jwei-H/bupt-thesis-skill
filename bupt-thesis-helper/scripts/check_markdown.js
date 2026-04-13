@@ -708,7 +708,11 @@ function printTextReport(result) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const markdown = args._[0] || 'thesis.md';
+  const markdown = args._[0];
+  if (!markdown) {
+    console.error('错误: 请指定输入的 Markdown 文件路径。');
+    process.exit(1);
+  }
   const markdownPath = path.resolve(markdown);
   if (!fs.existsSync(markdownPath)) {
     console.error(`文件不存在: ${markdownPath}`);

@@ -23,11 +23,11 @@ description: Use this skill for the BUPT thesis workflow in this repository: run
 2. **非必要不要阅读全文。** 优先使用检查脚本输出、标题树、局部行号与局部片段定位问题；只有在脚本结果不足以判断时，才阅读原文局部内容。
 3. **多级标题的“含义约定”由 LLM 复核。** 检查脚本只能抽取和校验标题结构；对于“这个标题层级是否符合我们当前约定”的判断，必须结合 `headings` 输出由 LLM 继续复核。
 4. **检查完先汇报，再询问是否修复。** 当脚本检查完成后，先总结错误/警告与标题树结论，再询问用户是否开始修复，不要默认直接改论文。
-5. **文件名和路径不能写死。** 所有脚本都应通过参数接收输入/输出路径；不要假设论文一定叫 `thesis.md`。
+5. **始终显式指定文件路径。** 所有脚本必须明确传入输入的 Markdown 路径，系统不提供任何默认文件名回退。调用脚本前，必须首先确认要处理的 Markdown 文件路径。
 
 ## Dependencies
 
-推荐使用托管 Node 运行时与统一依赖目录：
+运行该 Skill 下的工具链需要配置 Node.js 并在当前上下文环境安装必要的 npm 包。作为 Agent，你应该自主判断或提示用户是否已安装这些包；如果环境缺失依赖，直接通过系统命令在恰当目录自行安装：
 
 ```bash
 npm install docx jszip @xmldom/xmldom
@@ -98,6 +98,11 @@ node bupt-thesis-helper/scripts/md2doc.js --workspace <workspace> --input <markd
 9. 将 Mermaid / PlantUML 类代码块按图片对象纳入题注检查
 
 **重要：** 标题“结构正确”不等于“层级语义正确”。拿到 `headings` 输出后，LLM 仍需结合当前项目约定判断：这些多级标题是否真的该放在这一层。
+
+## Convention over Configuration (约定大于配置)
+
+本技能的一切检查、导出逻辑与特定的论文模板排版，都强依赖于深度的“命名约定与格式约定”（如：特定的专用标题名、固定的图表题注格式等）。
+作为 Agent，在执行涉及论文修改、查错、调整排版和结构生成的操作前，你必须前往研读 \`bupt-thesis-helper/references/markdown-writing-spec.md\`，这是所有约定逻辑的唯一真理源。
 
 ## Recommended Workflow
 
