@@ -30,7 +30,7 @@ description: Use this skill for the BUPT thesis workflow in this repository: run
 推荐使用托管 Node 运行时与统一依赖目录：
 
 ```bash
-cd /Users/jingwei/.workbuddy/binaries/node/workspace && /Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/npm install docx jszip @xmldom/xmldom
+npm install docx jszip @xmldom/xmldom
 ```
 
 依赖用途：
@@ -39,38 +39,36 @@ cd /Users/jingwei/.workbuddy/binaries/node/workspace && /Users/jingwei/.workbudd
 - `jszip`：DOCX 包读写
 - `@xmldom/xmldom`：封面注入与 XML 后处理
 
-通常不需要手动设置 `NODE_PATH`；skill 会优先从托管依赖目录加载模块。
-
 ## Commands
 
 ### 1. 结构检查
 
 ```bash
-/Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/node .workbuddy/skills/bupt-thesis-helper/scripts/check_markdown.js <markdown-path>
+node bupt-thesis-helper/scripts/check_markdown.js <markdown-path>
 ```
 
 需要结构化标题树与问题清单时：
 
 ```bash
-/Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/node .workbuddy/skills/bupt-thesis-helper/scripts/check_markdown.js <markdown-path> --json
+node bupt-thesis-helper/scripts/check_markdown.js <markdown-path> --json
 ```
 
 ### 2. 只生成正文 DOCX
 
 ```bash
-/Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/node .workbuddy/skills/bupt-thesis-helper/scripts/generate_thesis.js --workspace <workspace> --input <markdown-path> --output <body-docx-path>
+node bupt-thesis-helper/scripts/generate_thesis.js --workspace <workspace> --input <markdown-path> --output <body-docx-path>
 ```
 
 ### 3. 只组装封面与正文
 
 ```bash
-/Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/node .workbuddy/skills/bupt-thesis-helper/scripts/compose_docx.js --cover <cover-docx-path> --body <body-docx-path> --output <final-docx-path> --cover-data <cover-json-path>
+node bupt-thesis-helper/scripts/compose_docx.js --cover <cover-docx-path> --body <body-docx-path> --output <final-docx-path> --cover-data <cover-json-path>
 ```
 
 ### 4. 一键导出最终 DOCX
 
 ```bash
-/Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/node .workbuddy/skills/bupt-thesis-helper/scripts/md2doc.js --workspace <workspace> --input <markdown-path> --output <final-docx-path>
+node bupt-thesis-helper/scripts/md2doc.js --workspace <workspace> --input <markdown-path> --output <final-docx-path>
 ```
 
 可选参数：
