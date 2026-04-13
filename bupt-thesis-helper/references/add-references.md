@@ -90,10 +90,5 @@
 
 同时在正文对应位置补充行内引用标记 `[^N]`（上角标）。
 
-写入后重新运行检查：
-
-```bash
-/Users/jingwei/.workbuddy/binaries/node/versions/22.12.0/bin/node .workbuddy/skills/bupt-thesis-helper/scripts/check_markdown.js thesis.md
-```
-
+写入后重新运行检查
 确认无 `reference.count_low` 警告。
