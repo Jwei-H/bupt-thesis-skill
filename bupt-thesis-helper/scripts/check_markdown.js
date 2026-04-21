@@ -373,15 +373,12 @@ function checkAbstractRules(lines, blocks, issues) {
       return;
     }
 
-    // 检查关键词数量（3-5个）
     const keywordLine = keywordEntry.text.trim();
-    // 提取关键词部分（去掉"关键词"/"KEY WORDS"前缀和加粗标记）
     const kwContent = keywordLine
       .replace(/^\*\*关键词\*\*|^关键词/, '')
       .replace(/^\*\*KEY WORDS\*\*|^KEY WORDS/i, '')
       .trim();
     if (kwContent) {
-      // 中文关键词用空格或中文间隔符分隔，英文关键词用2个以上空格或分号分隔
       const kwList = isEn
         ? kwContent.split(/\s{2,}|;/).map((k) => k.trim()).filter(Boolean)
         : kwContent.split(/[\s；;，,]+/).map((k) => k.trim()).filter(Boolean);
@@ -517,7 +514,6 @@ function checkFormulaRules(blocks, issues) {
   const headings = extractHeadings(blocks);
   const formulaBlocks = blocks.filter((b) => b.type === 'formula');
   const formulaNumbers = new Map();
-  // 匹配行末的 % 式（X-Y） 标签（也支持半角括号）
   const FORMULA_LABEL_LINE_RE = /%\s*(式[（(]\d+-\d+[）)]|[（(]\d+-\d+[）)])\s*$/;
 
   formulaBlocks.forEach((block) => {
@@ -569,7 +565,6 @@ function checkFormulaRules(blocks, issues) {
 }
 
 function checkReferenceRules(lines, blocks, issues) {
-  // 统计参考文献定义（脚注格式 [^N]: ...）
   const refDefs = [];
   lines.forEach((line, index) => {
     const match = line.match(/^\[\^(\d+)\]:\s*(.+)$/);
@@ -594,7 +589,7 @@ function checkReferenceRules(lines, blocks, issues) {
   const bareRefRe = /(?<!\[)\[(\d+)\](?!\:)/g;
   lines.forEach((line, index) => {
     if (/^\[\^\d+\]:/.test(line)) {
-      return; // 跳过参考文献定义行
+      return;
     }
     let match;
     while ((match = bareRefRe.exec(line)) !== null) {
@@ -616,16 +611,7 @@ function checkReferenceRules(lines, blocks, issues) {
   }
 }
 
-function checkSpecialSections(blocks, issues) {
-  // 检查致谢、附录等特殊章节
-  const headings = extractHeadings(blocks);
-  const specialSections = ['致谢', '附录'];
-  specialSections.forEach((name) => {
-    const found = headings.find((h) => h.level === 2 && h.text.startsWith(name));
-    if (found) {
-      // 致谢/附录应为二级标题（## 致谢）
-    }
-  });
+function checkSpecialSections() {
 }
 
 function runChecks(markdownPathInput) {

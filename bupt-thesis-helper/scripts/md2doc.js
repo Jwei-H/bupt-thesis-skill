@@ -36,39 +36,39 @@ function runNodeScript(scriptPath, scriptArgs, options = {}) {
   }
 }
 
-const DEFAULT_COVER_DATA_FILENAME = 'thesis.cover.json';
-
-function resolveWorkspacePath(workspace, targetPath) {
-  return path.resolve(workspace, targetPath);
+function resolveCliPath(baseDir, targetPath) {
+  return path.isAbsolute(targetPath) ? targetPath : path.resolve(baseDir, targetPath);
 }
 
-function ensureCoverDataTemplate({ templatePath, workspaceCoverDataPath }) {
-  if (fs.existsSync(workspaceCoverDataPath)) {
+function ensureCoverDataTemplate({ templatePath, targetCoverDataPath }) {
+  if (fs.existsSync(targetCoverDataPath)) {
     return { created: false };
   }
-  fs.copyFileSync(templatePath, workspaceCoverDataPath);
+  fs.copyFileSync(templatePath, targetCoverDataPath);
   return { created: true };
 }
 
 async function main() {
   const skillRoot = path.resolve(__dirname, '..');
   const args = parseArgs(process.argv.slice(2));
-  const workspace = path.resolve(args.workspace || process.cwd());
+  const baseDir = path.resolve(args.workspace || process.cwd());
   const markdownInput = args.input || args.markdown || args._[0];
   if (!markdownInput) {
     console.error('错误: 请指定输入的 Markdown 文件路径。');
     process.exit(1);
   }
-  const markdownPath = path.resolve(workspace, markdownInput);
+  const markdownPath = resolveCliPath(baseDir, markdownInput);
   const generatorPath = path.resolve(skillRoot, 'scripts', 'generate_thesis.js');
   const composerPath = path.resolve(skillRoot, 'scripts', 'compose_docx.js');
-  const coverPath = path.resolve(args.cover || path.join(skillRoot, 'assets', '论文封面+诚信声明.docx'));
+  const coverPath = resolveCliPath(baseDir, args.cover || path.join(skillRoot, 'assets', '论文封面+诚信声明.docx'));
   const coverDataTemplatePath = path.resolve(skillRoot, 'assets', 'thesis.cover.example.json');
-  const coverDataPath = resolveWorkspacePath(workspace, args['cover-data'] || DEFAULT_COVER_DATA_FILENAME);
-  const outputDefaultName = `${path.parse(markdownPath).name || 'thesis'}.docx`;
-  const outputPath = path.resolve(workspace, args.output || outputDefaultName);
+  const coverDataDefaultName = `${path.parse(markdownPath).name || 'document'}.cover.json`;
+  const coverDataPath = resolveCliPath(baseDir, args['cover-data'] || path.join(path.dirname(markdownPath), coverDataDefaultName));
+  const outputPath = args.output
+    ? resolveCliPath(baseDir, args.output)
+    : path.join(path.dirname(markdownPath), `${path.parse(markdownPath).name || 'document'}.docx`);
   const bodyTempName = `${path.parse(outputPath).name}.body.tmp.docx`;
-  const bodyTempPath = path.resolve(path.dirname(outputPath), bodyTempName);
+  const bodyTempPath = path.join(path.dirname(outputPath), bodyTempName);
 
   if (!fs.existsSync(markdownPath)) {
     console.error(`Markdown 文件不存在: ${markdownPath}`);
@@ -93,13 +93,13 @@ async function main() {
 
   const coverDataTemplateStatus = ensureCoverDataTemplate({
     templatePath: coverDataTemplatePath,
-    workspaceCoverDataPath: coverDataPath,
+    targetCoverDataPath: coverDataPath,
   });
   if (coverDataTemplateStatus.created) {
-    console.log(`[info] 未发现封面信息 JSON，已复制模板到工作区: ${coverDataPath}`);
+    console.log(`[info] 未发现封面信息 JSON，已复制模板到目标目录: ${coverDataPath}`);
     console.log('[info] 请按需填写其中字段；后续再次执行 md2doc 时会自动把第一页封面信息写入 DOCX。');
   } else {
-    console.log(`[info] 使用工作区封面信息 JSON: ${coverDataPath}`);
+    console.log(`[info] 使用封面信息 JSON: ${coverDataPath}`);
   }
 
   if (!args['skip-check']) {
@@ -112,10 +112,10 @@ async function main() {
   }
 
   console.log(`\n[step 1/3] 生成正文 DOCX: ${generatorPath}`);
-  runNodeScript(generatorPath, ['--workspace', workspace, '--input', markdownPath, '--output', bodyTempPath], { cwd: workspace });
+  runNodeScript(generatorPath, ['--input', markdownPath, '--output', bodyTempPath], { cwd: path.dirname(markdownPath) });
 
   console.log(`[step 2/3] 组装封面与正文: ${composerPath}`);
-  runNodeScript(composerPath, ['--cover', coverPath, '--body', bodyTempPath, '--output', outputPath, '--cover-data', coverDataPath], { cwd: workspace });
+  runNodeScript(composerPath, ['--cover', coverPath, '--body', bodyTempPath, '--output', outputPath, '--cover-data', coverDataPath], { cwd: path.dirname(markdownPath) });
 
   console.log(`[step 3/3] 输出完成: ${outputPath}`);
   fs.rmSync(bodyTempPath, { force: true });

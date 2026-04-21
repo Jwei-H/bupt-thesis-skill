@@ -4,12 +4,25 @@ const fs = require('fs');
 const path = require('path');
 const { createRequire } = require('module');
 
+function appendAncestorNodeModules(candidates, startPath) {
+  let current = path.resolve(startPath || process.cwd());
+  while (true) {
+    candidates.push(path.join(current, 'node_modules'));
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+}
+
 function candidateNodeModulePaths() {
   const candidates = [];
   if (process.env.NODE_PATH) {
     candidates.push(...process.env.NODE_PATH.split(path.delimiter).filter(Boolean));
   }
-  candidates.push(path.join(process.env.HOME || '', '.workbuddy', 'binaries', 'node', 'workspace', 'node_modules'));
+  appendAncestorNodeModules(candidates, process.cwd());
+  appendAncestorNodeModules(candidates, __dirname);
   return [...new Set(candidates.filter(Boolean))];
 }
 
@@ -22,7 +35,6 @@ function loadPackage(packageName) {
         const scopedRequire = createRequire(path.join(nodeModulesPath, '__skill_loader__.js'));
         return scopedRequire(packageName);
       } catch (error) {
-        // continue
       }
     }
     throw new Error(`无法加载依赖 ${packageName}。请先安装 skill 说明中的 Node 依赖。原始错误：${directError.message}`);
@@ -835,6 +847,69 @@ function setParagraphOutlineLevel(doc, paragraphProperties, level) {
   outline.setAttribute('w:val', String(level));
 }
 
+function setParagraphKeepNext(doc, paragraphProperties, enabled) {
+  if (enabled) {
+    ensureChildElement(doc, paragraphProperties, 'w:keepNext');
+    return;
+  }
+  removeChildElement(paragraphProperties, 'keepNext');
+}
+
+function setParagraphKeepLines(doc, paragraphProperties, enabled) {
+  if (enabled) {
+    ensureChildElement(doc, paragraphProperties, 'w:keepLines');
+    return;
+  }
+  removeChildElement(paragraphProperties, 'keepLines');
+}
+
+function ensureTableRowsCantSplit(doc, tableNode) {
+  let changed = false;
+  for (const rowNode of getElementChildren(tableNode)) {
+    if (localName(rowNode) !== 'tr') {
+      continue;
+    }
+    const rowProperties = ensureChildElement(doc, rowNode, 'w:trPr');
+    ensureChildElement(doc, rowProperties, 'w:cantSplit');
+    changed = true;
+  }
+  return changed;
+}
+
+function normalizeTableCaptionPagination(bodyDoc) {
+  const body = bodyDoc.getElementsByTagName('w:body')[0];
+  if (!body) {
+    return false;
+  }
+
+  const nodes = getElementChildren(body);
+  let changed = false;
+
+  for (let index = 0; index < nodes.length - 1; index += 1) {
+    const current = nodes[index];
+    const next = nodes[index + 1];
+    if (localName(current) !== 'p' || localName(next) !== 'tbl') {
+      continue;
+    }
+
+    const paragraphText = normalizeCompactText(getParagraphText(current));
+    if (!/^表\d+-\d+/.test(paragraphText)) {
+      continue;
+    }
+
+    const paragraphProperties = ensureChildElement(bodyDoc, current, 'w:pPr');
+    setParagraphKeepNext(bodyDoc, paragraphProperties, true);
+    setParagraphKeepLines(bodyDoc, paragraphProperties, true);
+    changed = true;
+
+    if (ensureTableRowsCantSplit(bodyDoc, next)) {
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 function dedupeStyles(stylesDoc) {
   const root = stylesDoc.documentElement;
   const styleNodes = getElementChildren(root).filter((node) => localName(node) === 'style');
@@ -971,7 +1046,7 @@ async function normalizeStyles(bodyZip) {
 
   for (const styleId of ['TOC1', 'TOC2', 'TOC3']) {
     normalizeParagraphStyle(styleId, {
-      fonts: normalFonts,
+      fonts: styleId === 'TOC1' ? headingFonts : normalFonts,
       size: 24,
       bold: false,
       alignment: null,
@@ -987,9 +1062,9 @@ async function normalizeStyles(bodyZip) {
   const hyperlinkStyle = findStyleById(bodyStylesDoc, 'Hyperlink');
   if (hyperlinkStyle) {
     const runProperties = ensureChildElement(bodyStylesDoc, hyperlinkStyle, 'w:rPr');
-    setRunFonts(bodyStylesDoc, runProperties, normalFonts);
-    setBooleanRunProperty(bodyStylesDoc, runProperties, 'b', false);
-    setBooleanRunProperty(bodyStylesDoc, runProperties, 'bCs', false);
+    removeChildElement(runProperties, 'rFonts');
+    removeChildElement(runProperties, 'b');
+    removeChildElement(runProperties, 'bCs');
     setRunColor(bodyStylesDoc, runProperties, '000000');
     setRunUnderline(bodyStylesDoc, runProperties, 'none');
     changed = true;
@@ -1108,6 +1183,7 @@ async function composeDocx({ coverPath, bodyPath, outputPath, coverDataPath = nu
 
   prependCoverBody(bodyDoc, coverDoc, relationshipIdMap);
   normalizeBodyHeadingParagraphs(bodyDoc);
+  normalizeTableCaptionPagination(bodyDoc);
   await mergeMissingStyles(bodyZip, coverZip);
   await normalizeStyles(bodyZip);
 
@@ -1126,10 +1202,17 @@ async function composeDocx({ coverPath, bodyPath, outputPath, coverDataPath = nu
 }
 
 async function main() {
+  const skillRoot = path.resolve(__dirname, '..');
   const args = parseArgs(process.argv.slice(2));
-  const coverPath = path.resolve(args.cover || '论文封面+诚信声明.docx');
-  const bodyPath = path.resolve(args.body || 'thesis.body.tmp.docx');
-  const outputPath = path.resolve(args.output || 'thesis.docx');
+  const coverInput = args.cover || path.join(skillRoot, 'assets', '论文封面+诚信声明.docx');
+  const bodyInput = args.body || args._[0];
+  if (!bodyInput) {
+    console.error('错误: 请通过 --body <body-docx-path> 或位置参数显式指定正文 DOCX 路径。');
+    process.exit(1);
+  }
+  const coverPath = path.resolve(coverInput);
+  const bodyPath = path.resolve(bodyInput);
+  const outputPath = path.resolve(args.output || path.join(path.dirname(bodyPath), `${path.parse(bodyPath).name}.docx`));
   const coverDataPath = args['cover-data'] ? path.resolve(args['cover-data']) : null;
 
   if (!fs.existsSync(coverPath)) {

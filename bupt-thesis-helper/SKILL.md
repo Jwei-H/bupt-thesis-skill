@@ -1,13 +1,13 @@
 ---
 name: bupt-thesis-helper
-description: Use this skill for the BUPT thesis workflow in this repository: run structured Markdown checks, review heading trees against project conventions, and export any specified Markdown thesis file to DOCX with the bundled cover and integrity pages.
+description: Use this skill for BUPT thesis workflows: run structured Markdown checks, review heading trees against project conventions, and export any specified Markdown thesis file to DOCX with the bundled cover and integrity pages.
 ---
 
 # bupt-thesis-helper
 
 ## Overview
 
-用于当前工作区的北邮论文 Markdown 检查与 DOCX 导出。
+用于北邮论文 Markdown 检查与 DOCX 导出。
 
 适用场景：
 
@@ -25,6 +25,7 @@ description: Use this skill for the BUPT thesis workflow in this repository: run
 4. **检查完先汇报，再询问是否修复。** 当脚本检查完成后，先总结错误/警告与标题树结论，再询问用户是否开始修复，不要默认直接改论文。
 5. **始终显式指定文件路径。** 所有脚本必须明确传入输入的 Markdown 路径，系统不提供任何默认文件名回退。调用脚本前，必须首先确认要处理的 Markdown 文件路径。
 6. **关注参考文献余量与补充 SOP。** 当用户显式要求补充参考文献，或者你观察到参考文献数量低于 15 个时，应主动询问用户是否需要帮忙补充文献。如果用户确认，在操作前**必须**前往查阅并遵循 \`bupt-thesis-helper/references/add-references.md\` 规范。
+7. **目录页码异常先提示手动更新域。** 若用户反馈目录页码异常、但目录跳转仍正常，不要立刻判定导出逻辑错误；应先简要提示用户在 Word 中手动“更新整个目录”或全选后更新域重试，因为这类问题常与 Word 打开后的分页/域刷新时机有关。
 
 ## Dependencies
 
@@ -45,20 +46,25 @@ npm install docx jszip @xmldom/xmldom
 ### 1. 结构检查
 
 ```bash
-node bupt-thesis-helper/scripts/check_markdown.js <markdown-path>
+node scripts/check_markdown.js <markdown-path>
 ```
 
 需要结构化标题树与问题清单时：
 
 ```bash
-node bupt-thesis-helper/scripts/check_markdown.js <markdown-path> --json
+node scripts/check_markdown.js <markdown-path> --json
 ```
 
 ### 2. 只生成正文 DOCX
 
 ```bash
-node bupt-thesis-helper/scripts/generate_thesis.js --workspace <workspace> --input <markdown-path> --output <body-docx-path>
+node scripts/generate_thesis.js --input <markdown-path> --output <body-docx-path>
 ```
+
+说明：
+
+- `--input` 必填，不提供任何固定文件名回退
+- `--output` 可省略，默认输出为“输入 Markdown 同目录下的同名 .docx”
 
 ### 3. 只组装封面与正文
 
@@ -69,7 +75,7 @@ node bupt-thesis-helper/scripts/compose_docx.js --cover <cover-docx-path> --body
 ### 4. 一键导出最终 DOCX
 
 ```bash
-node bupt-thesis-helper/scripts/md2doc.js --workspace <workspace> --input <markdown-path> --output <final-docx-path>
+node scripts/md2doc.js --input <markdown-path> --output <final-docx-path>
 ```
 
 可选参数：
@@ -81,8 +87,8 @@ node bupt-thesis-helper/scripts/md2doc.js --workspace <workspace> --input <markd
 
 说明：
 
-- 若未指定 `--output`，默认输出为“输入 Markdown 同名 `.docx`”
-- 若工作区不存在封面信息 JSON，脚本会自动复制模板到工作区
+- 若未指定 `--output`，默认输出为“输入 Markdown 同目录下的同名 `.docx`”
+- 若未指定 `--cover-data`，脚本会在输入 Markdown 同目录下自动补出 `<markdown-name>.cover.json` 模板
 
 ## What the Check Script Covers
 
@@ -119,7 +125,7 @@ node bupt-thesis-helper/scripts/md2doc.js --workspace <workspace> --input <markd
 
 1. 运行检查
 2. 确认无阻断错误，或用户明确允许 `--force`
-3. 运行 `md2doc.js --workspace <workspace> --input <markdown-path> --output <final-docx-path>`
+3. 运行 `md2doc.js --input <markdown-path> --output <final-docx-path>`
 4. 打开结果，重点检查目录、标题、图表题注、公式、封面填写区与诚信声明页
 
 ### 场景 C：只想复核标题树

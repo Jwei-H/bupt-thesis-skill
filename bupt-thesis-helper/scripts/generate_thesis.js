@@ -1,20 +1,29 @@
-/**
- * thesis.md -> thesis.docx
- * 北京邮电大学本科毕业论文 Word 生成脚本
- */
-
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { createRequire } = require('module');
+
+function appendAncestorNodeModules(candidates, startPath) {
+  let current = path.resolve(startPath || process.cwd());
+  while (true) {
+    candidates.push(path.join(current, 'node_modules'));
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+}
 
 function candidateNodeModulePaths() {
   const candidates = [];
   if (process.env.NODE_PATH) {
     candidates.push(...process.env.NODE_PATH.split(path.delimiter).filter(Boolean));
   }
-  candidates.push(path.join(process.env.HOME || '', '.workbuddy', 'binaries', 'node', 'workspace', 'node_modules'));
+  appendAncestorNodeModules(candidates, process.cwd());
+  appendAncestorNodeModules(candidates, __dirname);
   return [...new Set(candidates.filter(Boolean))];
 }
 
@@ -27,7 +36,6 @@ function loadPackage(packageName) {
         const scopedRequire = createRequire(path.join(nodeModulesPath, '__skill_loader__.js'));
         return scopedRequire(packageName);
       } catch (error) {
-        // continue
       }
     }
     throw directError;
@@ -35,10 +43,11 @@ function loadPackage(packageName) {
 }
 
 function parseArgs(argv) {
-  const args = {};
+  const args = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token.startsWith('--')) {
+      args._.push(token);
       continue;
     }
     const key = token.slice(2);
@@ -84,22 +93,28 @@ const {
 } = loadPackage('docx');
 
 const cliArgs = parseArgs(process.argv.slice(2));
-const workspaceRoot = path.resolve(cliArgs.workspace || process.cwd());
-const mdPath = path.resolve(workspaceRoot, cliArgs.input || 'thesis.md');
-const outPath = path.resolve(workspaceRoot, cliArgs.output || 'thesis.docx');
+const baseDirectory = path.resolve(cliArgs.workspace || process.cwd());
+const markdownInput = cliArgs.input || cliArgs.markdown || cliArgs._[0];
+if (!markdownInput) {
+  throw new Error('请通过 --input <markdown-path> 或位置参数显式指定输入 Markdown 文件路径。');
+}
+const mdPath = path.isAbsolute(markdownInput)
+  ? markdownInput
+  : path.resolve(baseDirectory, markdownInput);
+const outPath = cliArgs.output
+  ? (path.isAbsolute(cliArgs.output) ? cliArgs.output : path.resolve(baseDirectory, cliArgs.output))
+  : path.join(path.dirname(mdPath), `${path.parse(mdPath).name || 'output'}.docx`);
 const markdownDir = path.dirname(mdPath);
 const krokiBaseUrl = String(cliArgs['kroki-base'] || 'https://kroki.io').replace(/\/+$/, '');
 
 const PAGE_WIDTH = 11906;
 const PAGE_HEIGHT = 16838;
-// 官方要求：上、下、左、右各 2.5cm；页眉 1.5cm，页脚 1.5cm
-// 1cm ≈ 567 twips
-const MARGIN_TOP = 1418;    // 2.5cm
-const MARGIN_BOTTOM = 1418; // 2.5cm
-const MARGIN_LEFT = 1418;   // 2.5cm
-const MARGIN_RIGHT = 1418;  // 2.5cm
-const MARGIN_HEADER = 851;  // 1.5cm
-const MARGIN_FOOTER = 851;  // 1.5cm
+const MARGIN_TOP = 1418;
+const MARGIN_BOTTOM = 1418;
+const MARGIN_LEFT = 1418;
+const MARGIN_RIGHT = 1418;
+const MARGIN_HEADER = 851;
+const MARGIN_FOOTER = 851;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 
 const SIZE = {
@@ -174,6 +189,15 @@ function normalizeImageSource(src) {
     return trimmed.slice(1, -1).trim();
   }
   return trimmed;
+}
+
+function normalizeHeadingDisplayText(text) {
+  return String(text || '').replace(/^(\d+(?:\.\d+)+)(?=[^\s.\d])/u, '$1 ');
+}
+
+function isKeywordParagraphText(text) {
+  const normalized = String(text || '').trim().toUpperCase();
+  return normalized.startsWith('**关键词**') || normalized.startsWith('**KEY WORDS**');
 }
 
 function isRemoteImageSource(src) {
@@ -384,9 +408,7 @@ function normalizePlantUmlSource(source) {
 }
 
 function ensureDiagramTempDir() {
-  const baseDir = path.join(workspaceRoot, '.workbuddy', 'tmp-diagrams');
-  fs.mkdirSync(baseDir, { recursive: true });
-  return fs.mkdtempSync(path.join(baseDir, 'render-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'bupt-thesis-helper-diagrams-'));
 }
 
 async function renderDiagramViaKroki(diagramType, source) {
@@ -550,19 +572,19 @@ function parseBlocks(sourceLines) {
     }
 
     if (/^##\s+/.test(line)) {
-      blocks.push({ type: 'heading1', text: line.replace(/^##\s+/, '').trim() });
+      blocks.push({ type: 'heading1', text: normalizeHeadingDisplayText(line.replace(/^##\s+/, '').trim()) });
       i += 1;
       continue;
     }
 
     if (/^###\s+/.test(line)) {
-      blocks.push({ type: 'heading2', text: line.replace(/^###\s+/, '').trim() });
+      blocks.push({ type: 'heading2', text: normalizeHeadingDisplayText(line.replace(/^###\s+/, '').trim()) });
       i += 1;
       continue;
     }
 
     if (/^####\s+/.test(line)) {
-      blocks.push({ type: 'heading3', text: line.replace(/^####\s+/, '').trim() });
+      blocks.push({ type: 'heading3', text: normalizeHeadingDisplayText(line.replace(/^####\s+/, '').trim()) });
       i += 1;
       continue;
     }
@@ -1060,14 +1082,7 @@ function importedXmlRoot(xml) {
   return wrapper.root[0];
 }
 
-/**
- * 从公式文本中提取末尾的 LaTeX 注释形式的公式编号标签。
- * 约定：在 $$ 块内任意一行末尾写 % 式（X-Y） 即标记该公式编号。
- * 示例：`Score = W \times S  % 式（5-2）`
- * 返回 { formulaText, label } ，label 为 null 表示无编号。
- */
 function extractFormulaLabel(rawText) {
-  // 从最后一行提取 `% 式（X-Y）` 或 `% (X-Y)`
   const labelRe = /\s*%\s*(式[（(]\d+-\d+[）)]|[（(]\d+-\d+[）)])\s*$/m;
   const match = rawText.match(labelRe);
   if (!match) {
@@ -1078,14 +1093,8 @@ function extractFormulaLabel(rawText) {
   return { formulaText, label };
 }
 
-/**
- * 构建带编号的公式行：三列无框表格
- *   左列（空白占位，约60%正文宽）| 中列（公式，居中）| 右列（编号，右对齐）
- * 官方要求：公式居中，序号标注在该行最右侧。
- */
 function buildNumberedFormulaRow(mathChildren, label) {
-  // 列宽分配：左占位 / 公式主体 / 右编号
-  const labelWidth = 1200;   // ~2.1cm 给编号
+  const labelWidth = 1200;
   const leftWidth = labelWidth;
   const midWidth = CONTENT_WIDTH - leftWidth - labelWidth;
 
@@ -1260,9 +1269,6 @@ function makeHeadingRun(text, opts = {}) {
 }
 
 function buildHeading(text, level, size, alignment, indent) {
-  // 不再依赖 Word 内置 Heading1/2/3。
-  // 用户机器上的 Word 会把内置 heading 样式重新套回主题字体（等线）和主题色（蓝色），
-  // 尤其在标题又被自动目录引用时更容易触发。这里改用自定义段落样式供正文与 TOC 同时引用。
   const styleId = BODY_HEADING_STYLES[level] || BODY_HEADING_STYLES[1];
   return new Paragraph({
     style: styleId,
@@ -1277,7 +1283,11 @@ function buildTitle(text) {
   return new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: lineSpacing(240, 240),
-    children: [makeRun(text, { size: SIZE.SAN_HAO, bold: true })],
+    children: [makeRun(text, {
+      size: SIZE.SAN_HAO,
+      bold: true,
+      font: { ascii: FONT_EN, eastAsia: FONT_HEI, hAnsi: FONT_EN },
+    })],
   });
 }
 
@@ -1322,7 +1332,11 @@ function buildDefaultHeader() {
     children: [
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: lineSpacing(0, 0, 240),
+        spacing: lineSpacing(0, 60, 240),
+        indent: { left: 0, firstLine: 0 },
+        border: {
+          bottom: { style: BorderStyle.SINGLE, size: 8, color: '000000', space: 1 },
+        },
         children: [makeRun('北京邮电大学本科毕业设计（论文）', {
           size: SIZE.XIAO_WU,
           font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
@@ -1341,6 +1355,8 @@ function buildPageNumberFooter() {
         indent: { left: 0, firstLine: 0 },
         children: [new TextRun({
           children: [PageNumber.CURRENT],
+          size: SIZE.WU_HAO,
+          font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
         })],
       }),
     ],
@@ -1349,6 +1365,10 @@ function buildPageNumberFooter() {
 
 function splitByHtmlBreaks(text) {
   return text.split(/<br\s*\/?>/i);
+}
+
+function trimTrailingHtmlBreaks(text) {
+  return String(text || '').replace(/(?:<br\s*\/?>\s*)+$/gi, '').trimEnd();
 }
 
 function isMarkdownImage(text) {
@@ -1646,7 +1666,6 @@ function buildReferenceParagraphs() {
           children: [makeRun('↩', { size: SIZE.XIAO_WU, color: '000000' })],
         }));
       }
-      // 官方：参考文献内容五号宋体/TNR，行间距1.5倍
       return new Paragraph({
         alignment: AlignmentType.JUSTIFIED,
         spacing: lineSpacing(0, 0, 360),
@@ -1745,20 +1764,25 @@ function blockToElements(block, context = {}) {
     }
 
     case 'heading2':
-      // 官方：二级标题黑体四号，加粗，顶格，不缩进
       return [buildHeading(block.text, 2, SIZE.SI_HAO, AlignmentType.LEFT, zeroIndent())];
 
     case 'heading3':
-      // 官方：三级标题黑体小四号，加粗，首行缩进2字符
       return [buildHeading(block.text, 3, SIZE.XIAO_SI, AlignmentType.LEFT, indentTwoChars())];
 
-    case 'paragraph':
-      return [new Paragraph({
+    case 'paragraph': {
+      const paragraphText = trimTrailingHtmlBreaks(block.text);
+      const elements = [];
+      if (isKeywordParagraphText(paragraphText)) {
+        elements.push(normalSpacerParagraph());
+      }
+      elements.push(new Paragraph({
         alignment: AlignmentType.JUSTIFIED,
         spacing: lineSpacing(0, 0),
         indent: indentTwoChars(),
-        children: parseInlineRuns(block.text, SIZE.XIAO_SI),
-      })];
+        children: parseInlineRuns(paragraphText, SIZE.XIAO_SI),
+      }));
+      return elements;
+    }
 
     case 'list':
       return block.items.map((item) => new Paragraph({
@@ -1822,7 +1846,6 @@ function blockToElements(block, context = {}) {
         alignment: AlignmentType.CENTER,
         spacing: lineSpacing(0, context.nextBlock && context.nextBlock.type === 'table' ? 0 : 120),
         indent: { left: 0, firstLine: 0 },
-        // 官方：图/表题注中文楷体五号，英文 Times New Roman 五号
         children: parseInlineRuns(block.text, SIZE.WU_HAO, { font: { ascii: FONT_EN, eastAsia: FONT_KAI, hAnsi: FONT_EN } }),
       })];
 
@@ -1903,7 +1926,6 @@ async function main() {
       },
       paragraphStyles: [
         {
-          // 显式定义 Normal 样式，彻底清零首行缩进
           id: 'Normal',
           name: 'Normal',
           quickFormat: true,
@@ -1917,7 +1939,6 @@ async function main() {
           },
         },
         {
-          // 表格单元格段落专用样式，与正文段落样式隔离，确保无任何首行/悬挂缩进
           id: 'TableCell',
           name: 'Table Cell',
           quickFormat: true,
@@ -2010,8 +2031,7 @@ async function main() {
           run: {
             size: SIZE.XIAO_SI,
             bold: false,
-            // 目录字体与正文保持一致：一级目录使用宋体小四
-            font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
+            font: { ascii: FONT_EN, eastAsia: FONT_HEI, hAnsi: FONT_EN },
           },
           paragraph: {
             spacing: { line: 400, lineRule: 'exact', before: 0, after: 0 },
@@ -2025,7 +2045,6 @@ async function main() {
           run: {
             size: SIZE.XIAO_SI,
             bold: false,
-            // 目录分级保留缩进：二级目录缩进一级
             font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
           },
           paragraph: {
