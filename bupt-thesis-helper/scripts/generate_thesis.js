@@ -180,6 +180,10 @@ function zeroIndent() {
     right: 0,
     firstLine: 0,
     hanging: 0,
+    leftChars: 0,
+    rightChars: 0,
+    firstLineChars: 0,
+    hangingChars: 0,
   };
 }
 
@@ -242,6 +246,7 @@ function inferImageExtension(src, contentType = '') {
 
 function buildImagePlaceholderParagraph(label, spacing = lineSpacing(60, 60)) {
   return new Paragraph({
+    style: 'ImageBlock',
     alignment: AlignmentType.CENTER,
     spacing,
     indent: zeroIndent(),
@@ -521,7 +526,7 @@ function makeBookmarkRuns(id, child) {
 function normalSpacerParagraph() {
   return new Paragraph({
     spacing: lineSpacing(0, 0),
-    indent: { left: 0, firstLine: 0 },
+    indent: zeroIndent(),
     children: [makeRun(' ', { size: SIZE.XIAO_SI })],
   });
 }
@@ -687,6 +692,7 @@ function referenceBookmark(referenceKey) {
 function parseInlineRuns(text, baseSize = SIZE.XIAO_SI, opts = {}) {
   const runs = [];
   const baseFont = opts.font || { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN };
+  const allowItalics = opts.allowItalics !== false;
   const regex = /\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[\^(\d+)\]|<br\s*\/?>|\$([^$]+)\$/gi;
   let lastIndex = 0;
   let match;
@@ -707,7 +713,7 @@ function parseInlineRuns(text, baseSize = SIZE.XIAO_SI, opts = {}) {
       runs.push(makeRun(match[2], {
         size: baseSize,
         bold: opts.bold || false,
-        italics: true,
+        italics: allowItalics,
         font: baseFont,
       }));
     } else if (match[3] !== undefined) {
@@ -1405,11 +1411,12 @@ function buildTableCellImageParagraph(image, columnWidth) {
   const usableWidth = Math.max(120, Math.floor((columnWidth - 240) / 15));
   const scaled = scaleImageSizeToFit(dimensions.width, dimensions.height, usableWidth, 300);
 
-  return new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: lineSpacing(0, 0, 240),
-    indent: zeroIndent(),
-    children: [new ImageRun({
+      return new Paragraph({
+        style: 'TableCell',
+        alignment: AlignmentType.CENTER,
+        spacing: lineSpacing(0, 0, 240),
+        indent: zeroIndent(),
+        children: [new ImageRun({
       type: asset.type,
       data: asset.buffer,
       transformation: scaled,
@@ -1647,7 +1654,22 @@ function scaleImageSizeToFit(width, height, maxWidth, maxHeight) {
 }
 
 function scaleImageSize(width, height) {
-  return scaleImageSizeToFit(width, height, 520, 720);
+  const aspectRatio = width / Math.max(height, 1);
+  const fullWidth = Math.max(520, Math.floor(CONTENT_WIDTH / 15));
+
+  if (aspectRatio >= 1.8) {
+    return scaleImageSizeToFit(width, height, fullWidth, 260);
+  }
+  if (aspectRatio >= 1.2) {
+    return scaleImageSizeToFit(width, height, Math.min(fullWidth, 560), 360);
+  }
+  if (aspectRatio >= 0.8) {
+    return scaleImageSizeToFit(width, height, 460, 460);
+  }
+  if (aspectRatio >= 0.55) {
+    return scaleImageSizeToFit(width, height, 360, 520);
+  }
+  return scaleImageSizeToFit(width, height, 300, 560);
 }
 
 function buildReferenceParagraphs() {
@@ -1656,7 +1678,7 @@ function buildReferenceParagraphs() {
     .map((key) => {
       const children = [
         ...makeBookmarkRuns(referenceBookmark(key), makeRun(`[${key}] `, { size: SIZE.WU_HAO })),
-        ...parseInlineRuns(referenceMap[key], SIZE.WU_HAO),
+        ...parseInlineRuns(referenceMap[key], SIZE.WU_HAO, { allowItalics: false }),
       ];
       const firstCitationAnchor = citationAnchorMap[key] && citationAnchorMap[key][0];
       if (firstCitationAnchor) {
@@ -1667,9 +1689,10 @@ function buildReferenceParagraphs() {
         }));
       }
       return new Paragraph({
+        style: 'ReferenceEntry',
         alignment: AlignmentType.JUSTIFIED,
         spacing: lineSpacing(0, 0, 360),
-        indent: { left: 420, hanging: 420 },
+        indent: zeroIndent(),
         children,
       });
     });
@@ -1825,9 +1848,10 @@ function blockToElements(block, context = {}) {
       const scaled = scaleImageSize(dimensions.width, dimensions.height);
 
       return [new Paragraph({
+        style: 'ImageBlock',
         alignment: AlignmentType.CENTER,
         spacing: lineSpacing(60, 60),
-        indent: { left: 0, firstLine: 0 },
+        indent: zeroIndent(),
         children: [new ImageRun({
           type: asset.type,
           data: asset.buffer,
@@ -1920,7 +1944,7 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(),
-            indent: { left: 0, firstLine: 0 },
+            indent: zeroIndent(),
           },
         },
       },
@@ -1935,7 +1959,7 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(),
-            indent: { left: 0, firstLine: 0 },
+            indent: zeroIndent(),
           },
         },
         {
@@ -1948,6 +1972,32 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(0, 0),
+            indent: zeroIndent(),
+          },
+        },
+        {
+          id: 'ImageBlock',
+          name: 'Image Block',
+          quickFormat: true,
+          run: {
+            font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
+            size: SIZE.XIAO_SI,
+          },
+          paragraph: {
+            spacing: lineSpacing(0, 0),
+            indent: zeroIndent(),
+          },
+        },
+        {
+          id: 'ReferenceEntry',
+          name: 'Reference Entry',
+          quickFormat: true,
+          run: {
+            font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
+            size: SIZE.WU_HAO,
+          },
+          paragraph: {
+            spacing: lineSpacing(0, 0, 360),
             indent: zeroIndent(),
           },
         },

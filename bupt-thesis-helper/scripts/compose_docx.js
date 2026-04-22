@@ -1059,6 +1059,30 @@ async function normalizeStyles(bodyZip) {
     });
   }
 
+  normalizeParagraphStyle('ImageBlock', {
+    fonts: normalFonts,
+    size: 24,
+    bold: false,
+    alignment: null,
+    spacing: { before: 0, after: 0, line: 360, lineRule: 'auto' },
+    indent: {
+      left: 0, right: 0, firstLine: 0, hanging: 0,
+      leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
+    },
+  });
+
+  normalizeParagraphStyle('ReferenceEntry', {
+    fonts: normalFonts,
+    size: 21,
+    bold: false,
+    alignment: null,
+    spacing: { before: 0, after: 0, line: 360, lineRule: 'auto' },
+    indent: {
+      left: 0, right: 0, firstLine: 0, hanging: 0,
+      leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
+    },
+  });
+
   const hyperlinkStyle = findStyleById(bodyStylesDoc, 'Hyperlink');
   if (hyperlinkStyle) {
     const runProperties = ensureChildElement(bodyStylesDoc, hyperlinkStyle, 'w:rPr');
