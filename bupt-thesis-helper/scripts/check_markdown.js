@@ -5,8 +5,8 @@ const path = require('path');
 
 const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/;
 const IMAGE_RE = /^!\[([^\]]*)\]\(([^)]+)\)\s*$/;
-const TABLE_CAPTION_RE = /^表\s+(\d+(?:-\d+)+)\s+.+表\s*$/;
-const IMAGE_CAPTION_RE = /^图\s+(\d+(?:-\d+)+)\s+.+图\s*$/;
+const TABLE_CAPTION_RE = /^表\s*(\d+(?:-\d+)+)\s+.+\S\s*$/;
+const IMAGE_CAPTION_RE = /^图\s*(\d+(?:-\d+)+)\s+.+\S\s*$/;
 const SECTION2_RE = /^(\d+)\.(\d+)\s+.+$/;
 const SECTION3_RE = /^(\d+)\.(\d+)\.(\d+)\s+.+$/;
 const KEYWORDS_ZH_RE = /^(\*\*关键词\*\*|关键词)/;
@@ -573,15 +573,34 @@ function checkReferenceRules(lines, blocks, issues) {
     }
   });
 
-  // 检查参考文献数量（至少10篇）
-  if (refDefs.length > 0 && refDefs.length < 10) {
+  // 2026届计算机学院要求：参考文献不少于20篇，近三年文献不少于30%。
+  if (refDefs.length > 0 && refDefs.length < 20) {
     addIssue(
       issues,
       'warning',
       'reference.count_low',
       1,
-      `参考文献共 ${refDefs.length} 篇，官方要求每篇论文至少查阅 10 篇文献资料。`,
+      `参考文献共 ${refDefs.length} 篇，2026届计算机学院要求不少于 20 篇。`,
     );
+  }
+
+  if (refDefs.length > 0) {
+    const currentYear = new Date().getFullYear();
+    const recentThreshold = currentYear - 2;
+    const recentRefs = refDefs.filter((ref) => {
+      const years = [...ref.content.matchAll(/\b(20\d{2}|19\d{2})\b/g)].map((match) => Number(match[1]));
+      return years.some((year) => year >= recentThreshold && year <= currentYear);
+    });
+    const recentRatio = recentRefs.length / refDefs.length;
+    if (recentRatio < 0.3) {
+      addIssue(
+        issues,
+        'warning',
+        'reference.recent_ratio_low',
+        1,
+        `近三年参考文献共 ${recentRefs.length}/${refDefs.length} 篇（${(recentRatio * 100).toFixed(1)}%），2026届计算机学院要求不低于 30%。`,
+      );
+    }
   }
 
   // 检查正文中的引用是否使用 [^N] 格式（上角标方括号）
