@@ -523,6 +523,24 @@ function makeBookmarkRuns(id, child) {
   ];
 }
 
+function makeBookmarkBoundaryRuns(id) {
+  const bookmarkId = sanitizeId(id);
+  const numericId = nextBookmarkNumericId();
+  return {
+    start: new TextRun({
+      children: [new ImportedXmlComponent('w:bookmarkStart', {
+        'w:id': String(numericId),
+        'w:name': bookmarkId,
+      })],
+    }),
+    end: new TextRun({
+      children: [new ImportedXmlComponent('w:bookmarkEnd', {
+        'w:id': String(numericId),
+      })],
+    }),
+  };
+}
+
 function normalSpacerParagraph() {
   return new Paragraph({
     spacing: lineSpacing(0, 0),
@@ -726,15 +744,14 @@ function parseInlineRuns(text, baseSize = SIZE.XIAO_SI, opts = {}) {
       const key = match[4];
       const citeAnchor = nextCitationAnchor(key);
       runs.push(...makeBookmarkRuns(citeAnchor, makeRun('', { size: baseSize })));
+      const citationRun = makeRun(`[${key}]`, {
+        size: SIZE.XIAO_WU,
+        superScript: true,
+        color: '000000',
+      });
       runs.push(new InternalHyperlink({
         anchor: referenceBookmark(key),
-        children: [
-          makeRun(`[${key}]`, {
-            size: SIZE.XIAO_WU,
-            superScript: true,
-            color: '000000',
-          }),
-        ],
+        children: [citationRun],
       }));
     } else if (/^<br/i.test(match[0])) {
       runs.push(makeRun('', { size: baseSize, break: 1 }));
@@ -758,6 +775,26 @@ function parseInlineRuns(text, baseSize = SIZE.XIAO_SI, opts = {}) {
 }
 
 const FORMULA_SYMBOL_MAP = {
+  '\\alpha': 'α',
+  '\\beta': 'β',
+  '\\gamma': 'γ',
+  '\\delta': 'δ',
+  '\\epsilon': 'ε',
+  '\\theta': 'θ',
+  '\\lambda': 'λ',
+  '\\mu': 'μ',
+  '\\pi': 'π',
+  '\\sigma': 'σ',
+  '\\phi': 'φ',
+  '\\omega': 'ω',
+  '\\Gamma': 'Γ',
+  '\\Delta': 'Δ',
+  '\\Theta': 'Θ',
+  '\\Lambda': 'Λ',
+  '\\Pi': 'Π',
+  '\\Sigma': 'Σ',
+  '\\Phi': 'Φ',
+  '\\Omega': 'Ω',
   '\\times': '×',
   '\\oplus': '⊕',
   '\\neq': '≠',
@@ -768,6 +805,11 @@ const FORMULA_SYMBOL_MAP = {
   '\\leq': '≤',
   '\\geq': '≥',
   '\\cdot': '·',
+  '\\ldots': '…',
+  '\\dots': '…',
+  '\\cdots': '⋯',
+  '\\quad': '    ',
+  '\\qquad': '        ',
 };
 
 function noBorder() {
@@ -1676,9 +1718,12 @@ function buildReferenceParagraphs() {
   return Object.keys(referenceMap)
     .sort((a, b) => Number(a) - Number(b))
     .map((key) => {
+      const bookmark = makeBookmarkBoundaryRuns(referenceBookmark(key));
       const children = [
-        ...makeBookmarkRuns(referenceBookmark(key), makeRun(`[${key}] `, { size: SIZE.WU_HAO })),
+        bookmark.start,
+        makeRun(`[${key}] `, { size: SIZE.WU_HAO }),
         ...parseInlineRuns(referenceMap[key], SIZE.WU_HAO, { allowItalics: false }),
+        bookmark.end,
       ];
       const firstCitationAnchor = citationAnchorMap[key] && citationAnchorMap[key][0];
       if (firstCitationAnchor) {
@@ -1692,7 +1737,7 @@ function buildReferenceParagraphs() {
         style: 'ReferenceEntry',
         alignment: AlignmentType.JUSTIFIED,
         spacing: lineSpacing(0, 0, 360),
-        indent: zeroIndent(),
+        indent: { left: 340, hanging: 340, firstLine: 0 },
         children,
       });
     });
@@ -1944,7 +1989,7 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(),
-            indent: zeroIndent(),
+            indent: { left: 340, hanging: 340, firstLine: 0 },
           },
         },
       },
@@ -1998,7 +2043,7 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(0, 0, 360),
-            indent: zeroIndent(),
+            indent: { left: 340, hanging: 340, firstLine: 0 },
           },
         },
         {

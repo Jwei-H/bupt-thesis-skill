@@ -60,6 +60,7 @@ async function main() {
   const markdownPath = resolveCliPath(baseDir, markdownInput);
   const generatorPath = path.resolve(skillRoot, 'scripts', 'generate_thesis.js');
   const composerPath = path.resolve(skillRoot, 'scripts', 'compose_docx.js');
+  const updateFieldsPath = path.resolve(skillRoot, 'scripts', 'enable_update_fields.js');
   const coverPath = resolveCliPath(baseDir, args.cover || path.join(skillRoot, 'assets', '论文封面+诚信声明.docx'));
   const coverDataTemplatePath = path.resolve(skillRoot, 'assets', 'thesis.cover.example.json');
   const coverDataDefaultName = `${path.parse(markdownPath).name || 'document'}.cover.json`;
@@ -80,6 +81,10 @@ async function main() {
   }
   if (!fs.existsSync(composerPath)) {
     console.error(`compose_docx.js 不存在: ${composerPath}`);
+    process.exit(2);
+  }
+  if (!fs.existsSync(updateFieldsPath)) {
+    console.error(`enable_update_fields.js 不存在: ${updateFieldsPath}`);
     process.exit(2);
   }
   if (!fs.existsSync(coverPath)) {
@@ -111,13 +116,16 @@ async function main() {
     }
   }
 
-  console.log(`\n[step 1/3] 生成正文 DOCX: ${generatorPath}`);
+  console.log(`\n[step 1/4] 生成正文 DOCX: ${generatorPath}`);
   runNodeScript(generatorPath, ['--input', markdownPath, '--output', bodyTempPath], { cwd: path.dirname(markdownPath) });
 
-  console.log(`[step 2/3] 组装封面与正文: ${composerPath}`);
+  console.log(`[step 2/4] 组装封面与正文: ${composerPath}`);
   runNodeScript(composerPath, ['--cover', coverPath, '--body', bodyTempPath, '--output', outputPath, '--cover-data', coverDataPath], { cwd: path.dirname(markdownPath) });
 
-  console.log(`[step 3/3] 输出完成: ${outputPath}`);
+  console.log(`[step 3/4] 更新域并规范化书签: ${updateFieldsPath}`);
+  runNodeScript(updateFieldsPath, [outputPath], { cwd: path.dirname(markdownPath) });
+
+  console.log(`[step 4/4] 输出完成: ${outputPath}`);
   fs.rmSync(bodyTempPath, { force: true });
 }
 
