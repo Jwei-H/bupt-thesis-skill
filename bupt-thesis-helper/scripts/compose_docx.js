@@ -267,31 +267,6 @@ function getRunText(run) {
   return getRunTextNodes(run).map((node) => node.textContent || '').join('');
 }
 
-function setRunText(run, text) {
-  const doc = run.ownerDocument;
-  const textNodes = getRunTextNodes(run);
-  textNodes.forEach((node) => run.removeChild(node));
-  const textNode = doc.createElement('w:t');
-  if (/^[\s　]|[\s　]$/.test(text) || / {2,}/.test(text)) {
-    textNode.setAttribute('xml:space', 'preserve');
-  }
-  textNode.appendChild(doc.createTextNode(text));
-  run.appendChild(textNode);
-}
-
-function runHasUnderline(run) {
-  for (let child = run.firstChild; child; child = child.nextSibling) {
-    if (child.nodeType === 1 && localName(child) === 'rPr') {
-      for (let item = child.firstChild; item; item = item.nextSibling) {
-        if (item.nodeType === 1 && localName(item) === 'u') {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
 function getParagraphText(paragraph) {
   const chunks = [];
   for (let child = paragraph.firstChild; child; child = child.nextSibling) {
@@ -302,394 +277,10 @@ function getParagraphText(paragraph) {
   return chunks.join('');
 }
 
-function normalizeCoverFieldLabel(text) {
-  const normalizedMap = {
-    '姓    名': '姓　　名',
-    '学    院': '学　　院',
-    '专    业': '专　　业',
-    '班    级': '班　　级',
-    '学    号': '学　　号',
-  };
-  return normalizedMap[text] || text;
-}
-
 function normalizeCompactText(text) {
   return String(text || '').replace(/[ \t\r\n　]/g, '');
 }
 
-function getParagraphRuns(paragraph) {
-  return getElementChildren(paragraph).filter((node) => localName(node) === 'r');
-}
-
-function getFirstPageFieldKey(compactText) {
-  if (compactText.startsWith('题目:') || compactText.startsWith('题目：')) {
-    return 'title';
-  }
-  const fieldMap = {
-    '姓名': 'name',
-    '学院': 'school',
-    '专业': 'major',
-    '班级': 'class',
-    '学号': 'studentId',
-    '指导教师': 'advisor',
-  };
-  return fieldMap[compactText] || null;
-}
-
-function normalizeCoverDataValue(value) {
-  if (value === undefined || value === null) {
-    return '';
-  }
-  return String(value).trim();
-}
-
-function loadCoverData(coverDataPath) {
-  if (!coverDataPath) {
-    return null;
-  }
-  const rawText = fs.readFileSync(coverDataPath, 'utf8');
-  let parsed;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch (error) {
-    throw new Error(`封面信息 JSON 解析失败: ${coverDataPath}\n${error.message}`);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`封面信息 JSON 必须是对象: ${coverDataPath}`);
-  }
-
-  const now = new Date();
-  return {
-    title: normalizeCoverDataValue(parsed.title),
-    name: normalizeCoverDataValue(parsed.name),
-    school: normalizeCoverDataValue(parsed.school),
-    major: normalizeCoverDataValue(parsed.major),
-    class: normalizeCoverDataValue(parsed.class || parsed.className),
-    studentId: normalizeCoverDataValue(parsed.studentId),
-    advisor: normalizeCoverDataValue(parsed.advisor),
-    year: String(now.getFullYear()),
-    month: String(now.getMonth() + 1),
-  };
-}
-
-function getRunProperties(run) {
-  for (let child = run.firstChild; child; child = child.nextSibling) {
-    if (child.nodeType === 1 && localName(child) === 'rPr') {
-      return child;
-    }
-  }
-  const rPr = run.ownerDocument.createElement('w:rPr');
-  run.insertBefore(rPr, run.firstChild);
-  return rPr;
-}
-
-function removeRunProperty(run, propertyLocalName) {
-  const rPr = getRunProperties(run);
-  const toRemove = [];
-  for (let child = rPr.firstChild; child; child = child.nextSibling) {
-    if (child.nodeType === 1 && localName(child) === propertyLocalName) {
-      toRemove.push(child);
-    }
-  }
-  toRemove.forEach((node) => rPr.removeChild(node));
-}
-
-function ensureRunProperty(run, propertyLocalName) {
-  const rPr = getRunProperties(run);
-  for (let child = rPr.firstChild; child; child = child.nextSibling) {
-    if (child.nodeType === 1 && localName(child) === propertyLocalName) {
-      return child;
-    }
-  }
-  const propertyNode = run.ownerDocument.createElement(`w:${propertyLocalName}`);
-  rPr.appendChild(propertyNode);
-  return propertyNode;
-}
-
-function setRunBold(run, enabled) {
-  if (enabled) {
-    ensureRunProperty(run, 'b');
-    ensureRunProperty(run, 'bCs');
-    return;
-  }
-  removeRunProperty(run, 'b');
-  removeRunProperty(run, 'bCs');
-}
-
-function setRunFontSize(run, halfPoints) {
-  const sz = ensureRunProperty(run, 'sz');
-  sz.setAttribute('w:val', String(halfPoints));
-  const szCs = ensureRunProperty(run, 'szCs');
-  szCs.setAttribute('w:val', String(halfPoints));
-}
-
-function setRunFonts(run, fonts) {
-  const rFonts = ensureRunProperty(run, 'rFonts');
-  Object.entries(fonts).forEach(([key, value]) => {
-    if (value) {
-      rFonts.setAttribute(`w:${key}`, value);
-    }
-  });
-}
-
-function removeUnderlineFormatting(run) {
-  removeRunProperty(run, 'u');
-}
-
-function textDisplayWidth(text) {
-  return Array.from(String(text || '')).reduce((sum, char) => sum + (char.charCodeAt(0) <= 0x7f ? 1 : 2), 0);
-}
-
-function spacePlaceholderWidth(text) {
-  return Array.from(text).reduce((sum, char) => sum + (char === '　' ? 2 : 1), 0);
-}
-
-function clearRunContent(run) {
-  const removableChildren = [];
-  for (let child = run.firstChild; child; child = child.nextSibling) {
-    if (!(child.nodeType === 1 && localName(child) === 'rPr')) {
-      removableChildren.push(child);
-    }
-  }
-  removableChildren.forEach((child) => run.removeChild(child));
-}
-
-function insertNodeAfter(referenceNode, newNode) {
-  const parent = referenceNode.parentNode;
-  if (!parent) {
-    return;
-  }
-  if (referenceNode.nextSibling) {
-    parent.insertBefore(newNode, referenceNode.nextSibling);
-    return;
-  }
-  parent.appendChild(newNode);
-}
-
-function tokenizeWrapText(text) {
-  return String(text || '').match(/[A-Za-z0-9]+|./gu) || [];
-}
-
-function findBalancedTwoLineWrap(text, maxWidth) {
-  const limit = Math.max(1, maxWidth);
-  const tokens = tokenizeWrapText(text);
-  if (tokens.length < 2) {
-    return null;
-  }
-
-  const tokenWidths = tokens.map((token) => textDisplayWidth(token));
-  const totalWidth = tokenWidths.reduce((sum, width) => sum + width, 0);
-  if (totalWidth <= limit || totalWidth > limit * 2) {
-    return null;
-  }
-
-  const badLineStartPattern = /^[）】，。、；：！？]$/;
-  const badLineEndPattern = /^[（【《“]$/;
-  let leftWidth = 0;
-  let best = null;
-
-  for (let index = 1; index < tokens.length; index += 1) {
-    leftWidth += tokenWidths[index - 1];
-    const rightWidth = totalWidth - leftWidth;
-    if (leftWidth > limit || rightWidth > limit) {
-      continue;
-    }
-
-    const leftText = tokens.slice(0, index).join('');
-    const rightText = tokens.slice(index).join('');
-    let score = Math.abs(leftWidth - rightWidth);
-    if (badLineEndPattern.test(tokens[index - 1])) {
-      score += 100;
-    }
-    if (badLineStartPattern.test(tokens[index])) {
-      score += 100;
-    }
-    if (/^[A-Za-z0-9]+$/.test(tokens[index - 1]) && /^[A-Za-z0-9]+$/.test(tokens[index])) {
-      score += 100;
-    }
-    if (Math.min(leftWidth, rightWidth) < Math.max(4, Math.floor(limit * 0.35))) {
-      score += 40;
-    }
-
-    if (!best || score < best.score) {
-      best = { score, lines: [leftText, rightText] };
-    }
-  }
-
-  return best ? best.lines : null;
-}
-
-function wrapTextByDisplayWidth(text, maxWidth) {
-  const limit = Math.max(1, maxWidth);
-  const balancedLines = findBalancedTwoLineWrap(text, limit);
-  if (balancedLines) {
-    return balancedLines;
-  }
-
-  const tokens = tokenizeWrapText(text);
-  const lines = [];
-  let currentLine = '';
-  let currentWidth = 0;
-
-  const pushCurrentLine = () => {
-    if (currentLine) {
-      lines.push(currentLine);
-      currentLine = '';
-      currentWidth = 0;
-    }
-  };
-
-  const appendToken = (token) => {
-    const tokenWidth = textDisplayWidth(token);
-    if (tokenWidth > limit) {
-      for (const char of Array.from(token)) {
-        const charWidth = textDisplayWidth(char);
-        if (currentWidth + charWidth > limit && currentLine) {
-          pushCurrentLine();
-        }
-        currentLine += char;
-        currentWidth += charWidth;
-      }
-      return;
-    }
-
-    if (currentWidth + tokenWidth > limit && currentLine) {
-      pushCurrentLine();
-    }
-    currentLine += token;
-    currentWidth += tokenWidth;
-  };
-
-  tokens.forEach(appendToken);
-  pushCurrentLine();
-  return lines.length ? lines : [''];
-}
-
-function formatFilledCoverValue(value, placeholderText) {
-  if (!value) {
-    return '';
-  }
-  const leftPadding = '  ';
-  const availableWidth = Math.max(0, spacePlaceholderWidth(placeholderText));
-  const paddedValue = `${leftPadding}${value}`;
-  const trailingWidth = Math.max(0, availableWidth - textDisplayWidth(paddedValue));
-  return `${paddedValue}${' '.repeat(trailingWidth)}`;
-}
-
-function buildContinuationParagraph(paragraph, placeholderIndex, lineText, placeholderText) {
-  const continuationParagraph = paragraph.cloneNode(true);
-  const continuationRuns = getParagraphRuns(continuationParagraph);
-  continuationRuns.forEach((run, index) => {
-    clearRunContent(run);
-    if (index === placeholderIndex) {
-      setRunText(run, formatFilledCoverValue(lineText, placeholderText));
-    }
-  });
-  return continuationParagraph;
-}
-
-function fillFirstPageFieldParagraph(paragraph, fillValue) {
-  if (!fillValue) {
-    return false;
-  }
-
-  const runs = getParagraphRuns(paragraph);
-  const placeholderIndex = runs.findIndex((run) => runHasUnderline(run));
-  if (placeholderIndex === -1) {
-    return false;
-  }
-
-  const placeholderRun = runs[placeholderIndex];
-  const placeholderText = getRunText(placeholderRun);
-  const placeholderWidth = Math.max(1, spacePlaceholderWidth(placeholderText));
-  const lines = wrapTextByDisplayWidth(fillValue, placeholderWidth);
-
-  clearRunContent(placeholderRun);
-  setRunText(placeholderRun, formatFilledCoverValue(lines[0], placeholderText));
-
-  let anchorParagraph = paragraph;
-  for (let index = 1; index < lines.length; index += 1) {
-    const continuationParagraph = buildContinuationParagraph(paragraph, placeholderIndex, lines[index], placeholderText);
-    insertNodeAfter(anchorParagraph, continuationParagraph);
-    anchorParagraph = continuationParagraph;
-  }
-
-  return true;
-}
-
-function isStatementTitleParagraph(compactText) {
-  return compactText.startsWith('本人声明所呈交的毕业设计（论文），题目《》是本人在指导教师的指导下');
-}
-
-function fillStatementTitleParagraph(paragraph, coverData) {
-  if (!coverData || !coverData.title) {
-    return false;
-  }
-  const runs = getParagraphRuns(paragraph);
-  const prefixIndex = runs.findIndex((run) => getRunText(run).includes('题目《'));
-  const suffixIndex = runs.findIndex((run) => getRunText(run).includes('》是本人在指导教师'));
-  if (prefixIndex === -1 || suffixIndex === -1 || suffixIndex <= prefixIndex) {
-    return false;
-  }
-  const fillIndex = Math.min(prefixIndex + 1, suffixIndex - 1);
-  setRunText(runs[fillIndex], ` ${coverData.title} `);
-  for (let index = fillIndex + 1; index < suffixIndex; index += 1) {
-    setRunText(runs[index], '');
-  }
-  return true;
-}
-
-function fillYearMonthParagraph(paragraph, coverData) {
-  if (!coverData) {
-    return false;
-  }
-  const runs = getParagraphRuns(paragraph).filter((run) => getRunText(run));
-  if (!runs.length) {
-    return false;
-  }
-  setRunText(runs[0], ` ${coverData.year}年`);
-  if (runs[1]) {
-    setRunText(runs[1], '    ');
-  }
-  if (runs[2]) {
-    setRunText(runs[2], ` ${coverData.month}月`);
-  }
-  for (let index = 3; index < runs.length; index += 1) {
-    setRunText(runs[index], '');
-  }
-  return true;
-}
-
-function polishCoverParagraphs(coverDoc, coverData = null) {
-  const body = coverDoc.getElementsByTagName('w:body')[0];
-  if (!body) {
-    return;
-  }
-
-  for (const paragraph of getElementChildren(body)) {
-    if (localName(paragraph) !== 'p') {
-      continue;
-    }
-    const paragraphText = getParagraphText(paragraph);
-    const compactText = normalizeCompactText(paragraphText);
-    if (compactText === '年月') {
-      fillYearMonthParagraph(paragraph, coverData);
-      continue;
-    }
-    if (isStatementTitleParagraph(compactText)) {
-      fillStatementTitleParagraph(paragraph, coverData);
-      continue;
-    }
-
-    const firstPageFieldKey = getFirstPageFieldKey(compactText);
-    if (!firstPageFieldKey) {
-      continue;
-    }
-
-    const fillValue = coverData ? coverData[firstPageFieldKey] : '';
-    fillFirstPageFieldParagraph(paragraph, fillValue);
-  }
-}
 
 function mergeMissingStyles(bodyZip, coverZip) {
   const bodyStylesFile = bodyZip.file('word/styles.xml');
@@ -806,6 +397,12 @@ function setParagraphSpacing(doc, paragraphProperties, options = {}) {
   }
   if (options.after !== undefined) {
     spacing.setAttribute('w:after', String(options.after));
+  }
+  if (options.beforeLines !== undefined) {
+    spacing.setAttribute('w:beforeLines', String(options.beforeLines));
+  }
+  if (options.afterLines !== undefined) {
+    spacing.setAttribute('w:afterLines', String(options.afterLines));
   }
   if (options.line !== undefined) {
     spacing.setAttribute('w:line', String(options.line));
@@ -980,6 +577,18 @@ async function normalizeStyles(bodyZip) {
     changed = true;
   };
 
+  normalizeParagraphStyle('FrontMatterTitle', {
+    fonts: headingFonts,
+    size: 32,
+    bold: true,
+    alignment: 'center',
+    indent: {
+      left: 0, right: 0, firstLine: 0, hanging: 0,
+      leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
+    },
+    spacing: { before: 240, after: 240, beforeLines: 100, afterLines: 100, line: 360, lineRule: 'auto' },
+  });
+
   for (const styleId of ['Heading1', 'BUPTHeading1']) {
     normalizeParagraphStyle(styleId, {
       fonts: headingFonts,
@@ -990,7 +599,7 @@ async function normalizeStyles(bodyZip) {
         left: 0, right: 0, firstLine: 0, hanging: 0,
         leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
       },
-      spacing: { before: 180, after: 120, line: 360, lineRule: 'auto' },
+      spacing: { before: 0, after: 480, beforeLines: 0, afterLines: 200, line: 360, lineRule: 'auto' },
       outlineLevel: 0,
     });
   }
@@ -1004,7 +613,7 @@ async function normalizeStyles(bodyZip) {
         left: 0, right: 0, firstLine: 0, hanging: 0,
         leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
       },
-      spacing: { before: 120, after: 90, line: 360, lineRule: 'auto' },
+      spacing: { before: 120, after: 120, beforeLines: 50, afterLines: 50, line: 360, lineRule: 'auto' },
       outlineLevel: 1,
     });
   }
@@ -1015,10 +624,10 @@ async function normalizeStyles(bodyZip) {
       bold: true,
       alignment: 'left',
       indent: {
-        left: 0, right: 0, firstLine: 480, hanging: 0,
-        leftChars: 0, rightChars: 0, firstLineChars: 200, hangingChars: 0,
+        left: 0, right: 0, firstLine: 482, hanging: null,
+        leftChars: 0, rightChars: 0, firstLineChars: 200, hangingChars: null,
       },
-      spacing: { before: 90, after: 60, line: 360, lineRule: 'auto' },
+      spacing: { before: 120, after: 120, beforeLines: 50, afterLines: 50, line: 360, lineRule: 'auto' },
       outlineLevel: 2,
     });
   }
@@ -1030,7 +639,7 @@ async function normalizeStyles(bodyZip) {
       bold: true,
       alignment: 'left',
       indent: { left: 0, firstLine: 480, right: null, hanging: null },
-      spacing: { before: 90, after: 60, line: 360, lineRule: 'auto' },
+      spacing: { before: 120, after: 120, beforeLines: 50, afterLines: 50, line: 360, lineRule: 'auto' },
       outlineLevel,
     });
   }
@@ -1052,10 +661,10 @@ async function normalizeStyles(bodyZip) {
       alignment: null,
       spacing: { before: 0, after: 0, line: 400, lineRule: 'exact' },
       indent: styleId === 'TOC1'
-        ? { left: 0, firstLine: 0, right: null, hanging: null }
+        ? { left: 0, right: 0, firstLine: 0, hanging: 0, leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0 }
         : styleId === 'TOC2'
-          ? { left: 360, firstLine: 0, right: null, hanging: null }
-          : { left: 720, firstLine: 0, right: null, hanging: null },
+          ? { left: 420, right: 0, firstLine: 0, hanging: 0, leftChars: 200, rightChars: 0, firstLineChars: 0, hangingChars: 0 }
+          : { left: 840, right: 0, firstLine: 0, hanging: 0, leftChars: 400, rightChars: 0, firstLineChars: 0, hangingChars: 0 },
     });
   }
 
@@ -1077,6 +686,18 @@ async function normalizeStyles(bodyZip) {
     bold: false,
     alignment: null,
     spacing: { before: 0, after: 0, line: 360, lineRule: 'auto' },
+    indent: {
+      left: 340, right: 0, firstLine: 0, hanging: 340,
+      leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
+    },
+  });
+
+  normalizeParagraphStyle('AlgorithmBlock', {
+    fonts: { ascii: 'Times New Roman', eastAsia: '楷体', hAnsi: 'Times New Roman' },
+    size: 21,
+    bold: false,
+    alignment: null,
+    spacing: { before: 0, after: 0, line: 300, lineRule: 'auto' },
     indent: {
       left: 0, right: 0, firstLine: 0, hanging: 0,
       leftChars: 0, rightChars: 0, firstLineChars: 0, hangingChars: 0,
@@ -1110,7 +731,47 @@ function normalizeBodyHeadingParagraphs(bodyDoc) {
     }
     const styleNode = findChildElement(paragraphProperties, 'pStyle');
     const styleId = styleNode && (styleNode.getAttribute('w:val') || styleNode.getAttribute('val'));
-    if (styleId !== 'BUPTHeading2') {
+    if (!['BUPTHeading2', 'BUPTHeading3', 'Heading2', 'Heading3'].includes(styleId)) {
+      continue;
+    }
+    setParagraphIndent(bodyDoc, paragraphProperties, styleId === 'BUPTHeading3' || styleId === 'Heading3'
+      ? {
+        left: 0,
+        right: 0,
+        firstLine: 482,
+        hanging: null,
+        leftChars: 0,
+        rightChars: 0,
+        firstLineChars: 200,
+        hangingChars: null,
+      }
+      : {
+        left: 0,
+        right: 0,
+        firstLine: 0,
+        hanging: 0,
+        leftChars: 0,
+        rightChars: 0,
+        firstLineChars: 0,
+        hangingChars: 0,
+      });
+    changed = true;
+  }
+
+  return changed;
+}
+
+function normalizeCenteredParagraphIndents(bodyDoc) {
+  let changed = false;
+  const paragraphs = Array.from(bodyDoc.getElementsByTagName('w:p'));
+  for (const paragraph of paragraphs) {
+    const paragraphProperties = findChildElement(paragraph, 'pPr');
+    if (!paragraphProperties) {
+      continue;
+    }
+    const alignmentNode = findChildElement(paragraphProperties, 'jc');
+    const alignment = alignmentNode && (alignmentNode.getAttribute('w:val') || alignmentNode.getAttribute('val'));
+    if (alignment !== 'center') {
       continue;
     }
     setParagraphIndent(bodyDoc, paragraphProperties, {
@@ -1125,7 +786,59 @@ function normalizeBodyHeadingParagraphs(bodyDoc) {
     });
     changed = true;
   }
+  return changed;
+}
 
+function normalizeDirectParagraphSpacing(bodyDoc) {
+  let changed = false;
+  const paragraphs = Array.from(bodyDoc.getElementsByTagName('w:p'));
+  for (const paragraph of paragraphs) {
+    const paragraphText = normalizeCompactText(getParagraphText(paragraph));
+    if (!paragraphText) {
+      continue;
+    }
+    const paragraphProperties = ensureChildElement(bodyDoc, paragraph, 'w:pPr');
+    const styleNode = findChildElement(paragraphProperties, 'pStyle');
+    const styleId = styleNode && (styleNode.getAttribute('w:val') || styleNode.getAttribute('val'));
+
+    if (/^(图|表)\d+-\d+/.test(paragraphText)) {
+      setParagraphSpacing(bodyDoc, paragraphProperties, { before: 120, after: 120, beforeLines: 50, afterLines: 50, line: 360, lineRule: 'auto' });
+      changed = true;
+      continue;
+    }
+
+    if (styleId === 'BUPTHeading1' || styleId === 'Heading1') {
+      setParagraphSpacing(bodyDoc, paragraphProperties, { before: 0, after: 480, beforeLines: 0, afterLines: 200, line: 360, lineRule: 'auto' });
+      changed = true;
+      continue;
+    }
+
+    if (/^(摘要|ABSTRACT|目录)$/.test(paragraphText)) {
+      setParagraphSpacing(bodyDoc, paragraphProperties, { before: 0, after: 0, beforeLines: 0, afterLines: 0, line: 360, lineRule: 'auto' });
+      changed = true;
+      continue;
+    }
+  }
+  return changed;
+}
+
+function normalizeSectionPageSetup(bodyDoc) {
+  let changed = false;
+  const sectionProperties = Array.from(bodyDoc.getElementsByTagName('w:sectPr'));
+  for (const sectPr of sectionProperties) {
+    const pageSize = ensureChildElement(bodyDoc, sectPr, 'w:pgSz');
+    pageSize.setAttribute('w:w', '11906');
+    pageSize.setAttribute('w:h', '16838');
+    const pageMargin = ensureChildElement(bodyDoc, sectPr, 'w:pgMar');
+    pageMargin.setAttribute('w:top', '1418');
+    pageMargin.setAttribute('w:right', '1417');
+    pageMargin.setAttribute('w:bottom', '1418');
+    pageMargin.setAttribute('w:left', '1417');
+    pageMargin.setAttribute('w:header', '851');
+    pageMargin.setAttribute('w:footer', '851');
+    pageMargin.setAttribute('w:gutter', '0');
+    changed = true;
+  }
   return changed;
 }
 
@@ -1172,10 +885,9 @@ function validateDocumentRelationships(zip, relsDoc) {
   }
 }
 
-async function composeDocx({ coverPath, bodyPath, outputPath, coverDataPath = null }) {
+async function composeDocx({ coverPath, bodyPath, outputPath }) {
   const coverZip = await JSZip.loadAsync(fs.readFileSync(coverPath));
   const bodyZip = await JSZip.loadAsync(fs.readFileSync(bodyPath));
-  const coverData = loadCoverData(coverDataPath);
 
   const coverDocumentXml = await coverZip.file('word/document.xml').async('string');
   const bodyDocumentXml = await bodyZip.file('word/document.xml').async('string');
@@ -1191,7 +903,6 @@ async function composeDocx({ coverPath, bodyPath, outputPath, coverDataPath = nu
   const coverTypesDoc = parseXml(coverTypesXml);
   const bodyTypesDoc = parseXml(bodyTypesXml);
 
-  polishCoverParagraphs(coverDoc, coverData);
   mergeRootNamespaces(bodyDoc, coverDoc);
   const coverBody = coverDoc.getElementsByTagName('w:body')[0];
   const usedRelationshipIds = collectRelationshipIds(coverBody);
@@ -1207,6 +918,9 @@ async function composeDocx({ coverPath, bodyPath, outputPath, coverDataPath = nu
 
   prependCoverBody(bodyDoc, coverDoc, relationshipIdMap);
   normalizeBodyHeadingParagraphs(bodyDoc);
+  normalizeCenteredParagraphIndents(bodyDoc);
+  normalizeDirectParagraphSpacing(bodyDoc);
+  normalizeSectionPageSetup(bodyDoc);
   normalizeTableCaptionPagination(bodyDoc);
   await mergeMissingStyles(bodyZip, coverZip);
   await normalizeStyles(bodyZip);
@@ -1237,7 +951,6 @@ async function main() {
   const coverPath = path.resolve(coverInput);
   const bodyPath = path.resolve(bodyInput);
   const outputPath = path.resolve(args.output || path.join(path.dirname(bodyPath), `${path.parse(bodyPath).name}.docx`));
-  const coverDataPath = args['cover-data'] ? path.resolve(args['cover-data']) : null;
 
   if (!fs.existsSync(coverPath)) {
     console.error(`封面声明文件不存在: ${coverPath}`);
@@ -1247,16 +960,8 @@ async function main() {
     console.error(`正文 DOCX 不存在: ${bodyPath}`);
     process.exit(2);
   }
-  if (coverDataPath && !fs.existsSync(coverDataPath)) {
-    console.error(`封面信息 JSON 不存在: ${coverDataPath}`);
-    process.exit(2);
-  }
-
   console.log(`[compose] 前置注入封面声明: ${path.basename(coverPath)}`);
-  if (coverDataPath) {
-    console.log(`[compose] 使用封面信息 JSON: ${coverDataPath}`);
-  }
-  await composeDocx({ coverPath, bodyPath, outputPath, coverDataPath });
+  await composeDocx({ coverPath, bodyPath, outputPath });
   console.log(`[compose] 输出完成: ${outputPath}`);
 }
 

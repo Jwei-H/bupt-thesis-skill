@@ -40,14 +40,6 @@ function resolveCliPath(baseDir, targetPath) {
   return path.isAbsolute(targetPath) ? targetPath : path.resolve(baseDir, targetPath);
 }
 
-function ensureCoverDataTemplate({ templatePath, targetCoverDataPath }) {
-  if (fs.existsSync(targetCoverDataPath)) {
-    return { created: false };
-  }
-  fs.copyFileSync(templatePath, targetCoverDataPath);
-  return { created: true };
-}
-
 async function main() {
   const skillRoot = path.resolve(__dirname, '..');
   const args = parseArgs(process.argv.slice(2));
@@ -61,9 +53,6 @@ async function main() {
   const generatorPath = path.resolve(skillRoot, 'scripts', 'generate_thesis.js');
   const composerPath = path.resolve(skillRoot, 'scripts', 'compose_docx.js');
   const coverPath = resolveCliPath(baseDir, args.cover || path.join(skillRoot, 'assets', '论文封面+诚信声明.docx'));
-  const coverDataTemplatePath = path.resolve(skillRoot, 'assets', 'thesis.cover.example.json');
-  const coverDataDefaultName = `${path.parse(markdownPath).name || 'document'}.cover.json`;
-  const coverDataPath = resolveCliPath(baseDir, args['cover-data'] || path.join(path.dirname(markdownPath), coverDataDefaultName));
   const outputPath = args.output
     ? resolveCliPath(baseDir, args.output)
     : path.join(path.dirname(markdownPath), `${path.parse(markdownPath).name || 'document'}.docx`);
@@ -86,22 +75,6 @@ async function main() {
     console.error(`封面声明文件不存在: ${coverPath}`);
     process.exit(2);
   }
-  if (!fs.existsSync(coverDataTemplatePath)) {
-    console.error(`封面信息 JSON 模板不存在: ${coverDataTemplatePath}`);
-    process.exit(2);
-  }
-
-  const coverDataTemplateStatus = ensureCoverDataTemplate({
-    templatePath: coverDataTemplatePath,
-    targetCoverDataPath: coverDataPath,
-  });
-  if (coverDataTemplateStatus.created) {
-    console.log(`[info] 未发现封面信息 JSON，已复制模板到目标目录: ${coverDataPath}`);
-    console.log('[info] 请按需填写其中字段；后续再次执行 md2doc 时会自动把第一页封面信息写入 DOCX。');
-  } else {
-    console.log(`[info] 使用封面信息 JSON: ${coverDataPath}`);
-  }
-
   if (!args['skip-check']) {
     const result = runChecks(markdownPath);
     printTextReport(result);
@@ -115,7 +88,7 @@ async function main() {
   runNodeScript(generatorPath, ['--input', markdownPath, '--output', bodyTempPath], { cwd: path.dirname(markdownPath) });
 
   console.log(`[step 2/3] 组装封面与正文: ${composerPath}`);
-  runNodeScript(composerPath, ['--cover', coverPath, '--body', bodyTempPath, '--output', outputPath, '--cover-data', coverDataPath], { cwd: path.dirname(markdownPath) });
+  runNodeScript(composerPath, ['--cover', coverPath, '--body', bodyTempPath, '--output', outputPath], { cwd: path.dirname(markdownPath) });
 
   console.log(`[step 3/3] 输出完成: ${outputPath}`);
   fs.rmSync(bodyTempPath, { force: true });

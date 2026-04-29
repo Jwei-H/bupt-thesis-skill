@@ -80,6 +80,7 @@ const {
   VerticalAlign,
   PageBreak,
   PageNumber,
+  NumberFormat,
   TableOfContents,
   LevelFormat,
   InternalHyperlink,
@@ -171,7 +172,14 @@ function lineSpacing(before = 0, after = 0, line = 360) {
 }
 
 function indentTwoChars() {
-  return { firstLine: 480 };
+  return {
+    left: 0,
+    right: 0,
+    firstLine: 482,
+    leftChars: 0,
+    rightChars: 0,
+    firstLineChars: 200,
+  };
 }
 
 function zeroIndent() {
@@ -202,6 +210,30 @@ function normalizeHeadingDisplayText(text) {
 function isKeywordParagraphText(text) {
   const normalized = String(text || '').trim().toUpperCase();
   return normalized.startsWith('**关键词**') || normalized.startsWith('**KEY WORDS**');
+}
+
+function normalizeCaptionText(text) {
+  return String(text || '').trim().replace(/^(图|表)\s*(\d+-\d+)\s*/u, '$1$2  ');
+}
+
+function parseKeywordRuns(text) {
+  const source = String(text || '').trim();
+  const match = source.match(/^\*\*(关键词|KEY WORDS)\*\*\s*(.*)$/i);
+  if (!match) {
+    return parseInlineRuns(source, SIZE.XIAO_SI);
+  }
+  const isEnglish = match[1].toUpperCase() === 'KEY WORDS';
+  const labelFont = isEnglish
+    ? { ascii: FONT_EN, eastAsia: FONT_HEI, hAnsi: FONT_EN }
+    : { ascii: FONT_EN, eastAsia: FONT_HEI, hAnsi: FONT_EN };
+  const contentFont = isEnglish
+    ? { ascii: FONT_EN, eastAsia: FONT_EN, hAnsi: FONT_EN }
+    : { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN };
+  const separator = isEnglish ? '  ' : ' ';
+  return [
+    makeRun(match[1], { size: SIZE.XIAO_SI, bold: true, font: labelFont }),
+    makeRun(separator + match[2].trim(), { size: SIZE.XIAO_SI, font: contentFont }),
+  ];
 }
 
 function isRemoteImageSource(src) {
@@ -387,6 +419,13 @@ function normalizeDiagramLang(info) {
     return lang === 'mermaid' ? 'mermaid' : 'plantuml';
   }
   return '';
+}
+
+function isAlgorithmCodeBlock(block) {
+  if (!block || block.type !== 'codeblock') {
+    return false;
+  }
+  return ['algorithm', 'algo', 'pseudocode', '算法'].includes(normalizeFenceLang(block.lang));
 }
 
 function normalizeMermaidSource(source) {
@@ -637,7 +676,7 @@ function parseBlocks(sourceLines) {
     }
 
     if (/^(图|表)\s*\d+/.test(line.trim())) {
-      blocks.push({ type: 'caption', text: line.trim() });
+      blocks.push({ type: 'caption', text: normalizeCaptionText(line.trim()) });
       i += 1;
       continue;
     }
@@ -777,6 +816,28 @@ function noBorder() {
 function noBorders() {
   const b = noBorder();
   return { top: b, bottom: b, left: b, right: b, insideH: b, insideV: b };
+}
+
+function threeLineCellBorders(rowIndex, rowCount) {
+  return {
+    top: rowIndex === 0 ? border(6) : noBorder(),
+    bottom: rowIndex === 0 || rowIndex === rowCount - 1 ? border(6) : noBorder(),
+    left: noBorder(),
+    right: noBorder(),
+    insideH: noBorder(),
+    insideV: noBorder(),
+  };
+}
+
+function threeLineTableBorders() {
+  return {
+    top: border(6),
+    bottom: border(6),
+    left: noBorder(),
+    right: noBorder(),
+    insideH: noBorder(),
+    insideV: noBorder(),
+  };
 }
 
 function parseMathArgument(state) {
@@ -1115,7 +1176,7 @@ function buildNumberedFormulaRow(mathChildren, label) {
     children: [new Paragraph({
       alignment: align,
       spacing: { line: 360, lineRule: 'auto', before: 60, after: 60 },
-      indent: { left: 0, firstLine: 0 },
+      indent: zeroIndent(),
       children,
     })],
   });
@@ -1149,7 +1210,7 @@ function buildMathParagraph(formulaText, label = null) {
   return new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: lineSpacing(60, 60),
-    indent: { left: 0, firstLine: 0 },
+    indent: zeroIndent(),
     children: [new DocxMath({ children: mathChildren })],
   });
 }
@@ -1159,7 +1220,7 @@ function buildMathCellParagraph(formulaText, alignment = AlignmentType.LEFT) {
   return new Paragraph({
     alignment,
     spacing: lineSpacing(0, 0, 300),
-    indent: { left: 0, firstLine: 0 },
+    indent: zeroIndent(),
     children: normalized
       ? [new DocxMath({ children: formulaToMathChildren(normalized) })]
       : [makeRun(' ', { size: SIZE.XIAO_SI })],
@@ -1234,7 +1295,7 @@ function buildCaseFormulaTable(formulaText, label = null) {
       children: [new Paragraph({
         alignment: align,
         spacing: { line: 360, lineRule: 'auto', before: 60, after: 60 },
-        indent: { left: 0, firstLine: 0 },
+        indent: zeroIndent(),
         children,
       })],
     });
@@ -1259,7 +1320,7 @@ function buildCaseFormulaTable(formulaText, label = null) {
   return [new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: lineSpacing(60, 60),
-    indent: { left: 0, firstLine: 0 },
+    indent: zeroIndent(),
     children: [importedXmlRoot(xml)],
   })];
 }
@@ -1274,21 +1335,30 @@ function makeHeadingRun(text, opts = {}) {
   });
 }
 
+function headingSpacing(level) {
+  if (level === 1) {
+    return lineSpacing(0, 480);
+  }
+  return lineSpacing(120, 120);
+}
+
 function buildHeading(text, level, size, alignment, indent) {
   const styleId = BODY_HEADING_STYLES[level] || BODY_HEADING_STYLES[1];
   return new Paragraph({
     style: styleId,
     alignment,
-    spacing: lineSpacing(180, 120),
-    indent: indent || { left: 0, firstLine: 0 },
+    spacing: headingSpacing(level),
+    indent: indent || zeroIndent(),
     children: makeBookmarkRuns(headingBookmark(text), new TextRun({ text })),
   });
 }
 
 function buildTitle(text) {
   return new Paragraph({
+    style: 'FrontMatterTitle',
     alignment: AlignmentType.CENTER,
     spacing: lineSpacing(240, 240),
+    indent: zeroIndent(),
     children: [makeRun(text, {
       size: SIZE.SAN_HAO,
       bold: true,
@@ -1297,12 +1367,20 @@ function buildTitle(text) {
   });
 }
 
-function buildFrontMatterHeading(text) {
+function buildFrontMatterHeading(text, size = SIZE.XIAO_SAN) {
   return new Paragraph({
     alignment: AlignmentType.CENTER,
-    spacing: lineSpacing(180, 120),
-    indent: { left: 0, firstLine: 0 },
-    children: makeBookmarkRuns(`heading_${text}`, makeHeadingRun(text, { size: SIZE.SAN_HAO, bold: true })),
+    spacing: lineSpacing(0, 0),
+    indent: zeroIndent(),
+    children: makeBookmarkRuns(`heading_${text}`, makeHeadingRun(text, { size, bold: true })),
+  });
+}
+
+function frontMatterSpacerParagraph() {
+  return new Paragraph({
+    spacing: lineSpacing(0, 0),
+    indent: zeroIndent(),
+    children: [makeRun(' ', { size: SIZE.XIAO_SI })],
   });
 }
 
@@ -1339,7 +1417,7 @@ function buildDefaultHeader() {
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: lineSpacing(0, 60, 240),
-        indent: { left: 0, firstLine: 0 },
+        indent: zeroIndent(),
         border: {
           bottom: { style: BorderStyle.SINGLE, size: 8, color: '000000', space: 1 },
         },
@@ -1358,10 +1436,10 @@ function buildPageNumberFooter() {
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: lineSpacing(0, 0, 240),
-        indent: { left: 0, firstLine: 0 },
+        indent: zeroIndent(),
         children: [new TextRun({
           children: [PageNumber.CURRENT],
-          size: SIZE.WU_HAO,
+          size: SIZE.XIAO_WU,
           font: { ascii: FONT_EN, eastAsia: FONT_CN, hAnsi: FONT_EN },
         })],
       }),
@@ -1457,9 +1535,11 @@ function buildTableCellParagraphs(text, isHeader, columnWidth) {
       paragraphs.push(new Paragraph({
         style: 'TableCell',
         alignment: AlignmentType.CENTER,
-        spacing: lineSpacing(0, 0, 240),
+        spacing: lineSpacing(120, 120, 360),
         indent: zeroIndent(),
-        children: parseInlineRuns(trimmed, SIZE.XIAO_SI),
+        children: parseInlineRuns(normalizeCaptionText(trimmed), SIZE.WU_HAO, {
+          font: { ascii: FONT_EN, eastAsia: FONT_KAI, hAnsi: FONT_EN },
+        }),
       }));
       return;
     }
@@ -1585,14 +1665,13 @@ function buildTable(tableLines) {
     const isHeader = rowIndex === 0;
     return new TableRow({
       tableHeader: isHeader,
+      cantSplit: true,
       children: row.map((cellText, columnIndex) => new TableCell({
-        borders: allBorders(),
+        borders: threeLineCellBorders(rowIndex, rows.length),
         width: { size: columnWidths[columnIndex], type: WidthType.DXA },
         verticalAlign: VerticalAlign.CENTER,
         margins: { top: 80, bottom: 80, left: 60, right: 60 },
-        shading: isHeader
-          ? { fill: 'F2F2F2', type: ShadingType.CLEAR }
-          : { fill: 'FFFFFF', type: ShadingType.CLEAR },
+        shading: { fill: 'FFFFFF', type: ShadingType.CLEAR },
         children: buildTableCellParagraphs(cellText, isHeader, columnWidths[columnIndex]),
       })),
     });
@@ -1602,14 +1681,40 @@ function buildTable(tableLines) {
     width: { size: CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths,
     rows: tableRows,
-    borders: {
-      top: border(),
-      bottom: border(),
-      left: border(),
-      right: border(),
-      insideH: border(),
-      insideV: border(),
-    },
+    borders: threeLineTableBorders(),
+    alignment: AlignmentType.CENTER,
+  });
+}
+
+function buildAlgorithmBlock(code) {
+  const rawLines = String(code || '').split('\n');
+  const lines = rawLines.length ? rawLines : [''];
+  const rows = lines.map((line, rowIndex) => new TableRow({
+    cantSplit: true,
+    children: [new TableCell({
+      borders: threeLineCellBorders(rowIndex, lines.length),
+      width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+      verticalAlign: VerticalAlign.CENTER,
+      margins: { top: 60, bottom: 60, left: 80, right: 80 },
+      shading: { fill: 'FFFFFF', type: ShadingType.CLEAR },
+      children: [new Paragraph({
+        style: 'AlgorithmBlock',
+        alignment: AlignmentType.LEFT,
+        spacing: lineSpacing(0, 0, 300),
+        indent: zeroIndent(),
+        children: [makeRun(line || ' ', {
+          size: SIZE.WU_HAO,
+          font: { ascii: FONT_EN, eastAsia: FONT_KAI, hAnsi: FONT_EN },
+        })],
+      })],
+    })],
+  }));
+
+  return new Table({
+    width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+    columnWidths: [CONTENT_WIDTH],
+    rows,
+    borders: threeLineTableBorders(),
     alignment: AlignmentType.CENTER,
   });
 }
@@ -1692,7 +1797,7 @@ function buildReferenceParagraphs() {
         style: 'ReferenceEntry',
         alignment: AlignmentType.JUSTIFIED,
         spacing: lineSpacing(0, 0, 360),
-        indent: zeroIndent(),
+        indent: { left: 340, hanging: 340, right: 0, firstLine: 0 },
         children,
       });
     });
@@ -1760,6 +1865,7 @@ function blockToElements(block, context = {}) {
         elements.push(pageBreakParagraph());
       }
       elements.push(buildTitle(block.text));
+      elements.push(frontMatterSpacerParagraph());
       return elements;
     }
 
@@ -1770,9 +1876,13 @@ function blockToElements(block, context = {}) {
       }
 
       if (['摘要', 'ABSTRACT', '目录'].includes(block.text)) {
-        elements.push(buildFrontMatterHeading(block.text));
         if (block.text === '目录') {
+          elements.push(buildFrontMatterHeading(block.text, SIZE.SAN_HAO));
+          elements.push(frontMatterSpacerParagraph(), frontMatterSpacerParagraph());
           elements.push(buildTableOfContentsBlock());
+        } else {
+          elements.push(buildFrontMatterHeading(block.text, SIZE.XIAO_SAN));
+          elements.push(frontMatterSpacerParagraph());
         }
         return elements;
       }
@@ -1799,10 +1909,12 @@ function blockToElements(block, context = {}) {
         elements.push(normalSpacerParagraph());
       }
       elements.push(new Paragraph({
-        alignment: AlignmentType.JUSTIFIED,
+        alignment: (isKeywordParagraphText(paragraphText) || context.currentHeading1 === '致谢') ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
         spacing: lineSpacing(0, 0),
         indent: indentTwoChars(),
-        children: parseInlineRuns(paragraphText, SIZE.XIAO_SI),
+        children: isKeywordParagraphText(paragraphText)
+          ? parseKeywordRuns(paragraphText)
+          : parseInlineRuns(paragraphText, SIZE.XIAO_SI),
       }));
       return elements;
     }
@@ -1819,6 +1931,9 @@ function blockToElements(block, context = {}) {
       }));
 
     case 'codeblock':
+      if (isAlgorithmCodeBlock(block)) {
+        return [buildAlgorithmBlock(block.code)];
+      }
       return block.code.split('\n').map((line) => new Paragraph({
         alignment: AlignmentType.LEFT,
         spacing: { line: 300, lineRule: 'auto', before: 0, after: 0 },
@@ -1868,9 +1983,11 @@ function blockToElements(block, context = {}) {
     case 'caption':
       return [new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: lineSpacing(0, context.nextBlock && context.nextBlock.type === 'table' ? 0 : 120),
-        indent: { left: 0, firstLine: 0 },
-        children: parseInlineRuns(block.text, SIZE.WU_HAO, { font: { ascii: FONT_EN, eastAsia: FONT_KAI, hAnsi: FONT_EN } }),
+        spacing: lineSpacing(120, 120, 360),
+        indent: zeroIndent(),
+        keepNext: context.nextBlock && context.nextBlock.type === 'table',
+        keepLines: true,
+        children: parseInlineRuns(normalizeCaptionText(block.text), SIZE.WU_HAO, { font: { ascii: FONT_EN, eastAsia: FONT_KAI, hAnsi: FONT_EN } }),
       })];
 
     case 'table': {
@@ -1895,13 +2012,17 @@ async function main() {
     await preloadImageAssets(blocks);
 
     const frontMatterElements = [];
+  const tocElements = [];
   const bodyElements = [];
   let bodyStarted = false;
+  let tocStarted = false;
+  let currentHeading1 = '';
 
   blocks.forEach((block, index) => {
     const elements = blockToElements(block, {
       previousBlock: index > 0 ? blocks[index - 1] : null,
       nextBlock: index < blocks.length - 1 ? blocks[index + 1] : null,
+      currentHeading1,
     });
 
     const isBodyStartHeading = !bodyStarted
@@ -1917,8 +2038,15 @@ async function main() {
       normalizedElements.forEach((element) => bodyElements.push(element));
     } else if (bodyStarted) {
       elements.forEach((element) => bodyElements.push(element));
+    } else if (tocStarted || (block.type === 'heading1' && block.text === '目录')) {
+      tocStarted = true;
+      elements.forEach((element) => tocElements.push(element));
     } else {
       elements.forEach((element) => frontMatterElements.push(element));
+    }
+
+    if (block.type === 'heading1') {
+      currentHeading1 = block.text;
     }
 
     if ((index + 1) % 100 === 0 || index === blocks.length - 1) {
@@ -1926,7 +2054,7 @@ async function main() {
     }
   });
 
-  console.log(`[2/3] 文档元素构建完成：前置 ${frontMatterElements.length} 个元素，正文 ${bodyElements.length} 个元素`);
+  console.log(`[2/3] 文档元素构建完成：前置 ${frontMatterElements.length} 个元素，目录 ${tocElements.length} 个元素，正文 ${bodyElements.length} 个元素`);
 
   const doc = new Document({
     features: {
@@ -1959,6 +2087,21 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(),
+            indent: zeroIndent(),
+          },
+        },
+        {
+          id: 'FrontMatterTitle',
+          name: 'Front Matter Title',
+          quickFormat: true,
+          run: {
+            font: { ascii: FONT_EN, eastAsia: FONT_HEI, hAnsi: FONT_EN },
+            size: SIZE.SAN_HAO,
+            bold: true,
+          },
+          paragraph: {
+            alignment: AlignmentType.CENTER,
+            spacing: lineSpacing(240, 240),
             indent: zeroIndent(),
           },
         },
@@ -1998,6 +2141,19 @@ async function main() {
           },
           paragraph: {
             spacing: lineSpacing(0, 0, 360),
+            indent: { left: 340, hanging: 340, right: 0, firstLine: 0 },
+          },
+        },
+        {
+          id: 'AlgorithmBlock',
+          name: 'Algorithm Block',
+          quickFormat: true,
+          run: {
+            font: { ascii: FONT_EN, eastAsia: FONT_KAI, hAnsi: FONT_EN },
+            size: SIZE.WU_HAO,
+          },
+          paragraph: {
+            spacing: lineSpacing(0, 0, 300),
             indent: zeroIndent(),
           },
         },
@@ -2015,8 +2171,8 @@ async function main() {
           },
           paragraph: {
             alignment: AlignmentType.CENTER,
-            spacing: lineSpacing(180, 120),
-            indent: { left: 0, firstLine: 0 },
+            spacing: lineSpacing(0, 480),
+            indent: zeroIndent(),
             outlineLevel: 0,
           },
         },
@@ -2034,7 +2190,7 @@ async function main() {
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: lineSpacing(120, 90),
+            spacing: lineSpacing(120, 120),
             indent: zeroIndent(),
             outlineLevel: 1,
           },
@@ -2053,7 +2209,7 @@ async function main() {
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: lineSpacing(90, 60),
+            spacing: lineSpacing(120, 120),
             indent: indentTwoChars(),
             outlineLevel: 2,
           },
@@ -2071,7 +2227,7 @@ async function main() {
           paragraph: {
             alignment: AlignmentType.CENTER,
             spacing: lineSpacing(0, 120, 300),
-            indent: { left: 0, firstLine: 0 },
+            indent: zeroIndent(),
           },
         },
         {
@@ -2085,7 +2241,7 @@ async function main() {
           },
           paragraph: {
             spacing: { line: 400, lineRule: 'exact', before: 0, after: 0 },
-            indent: { left: 0, firstLine: 0 },
+            indent: zeroIndent(),
           },
         },
         {
@@ -2099,7 +2255,7 @@ async function main() {
           },
           paragraph: {
             spacing: { line: 400, lineRule: 'exact', before: 0, after: 0 },
-            indent: { left: 360, firstLine: 0 },
+            indent: { left: 420, firstLine: 0, leftChars: 200, firstLineChars: 0, rightChars: 0, hangingChars: 0 },
           },
         },
         {
@@ -2113,7 +2269,7 @@ async function main() {
           },
           paragraph: {
             spacing: { line: 400, lineRule: 'exact', before: 0, after: 0 },
-            indent: { left: 720, firstLine: 0 },
+            indent: { left: 840, firstLine: 0, leftChars: 400, firstLineChars: 0, rightChars: 0, hangingChars: 0 },
           },
         },
       ],
@@ -2133,10 +2289,30 @@ async function main() {
             },
           },
         },
-        headers: {
-          default: buildDefaultHeader(),
-        },
         children: frontMatterElements,
+      },
+      {
+        properties: {
+          page: {
+            size: { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+            margin: {
+              top: MARGIN_TOP,
+              right: MARGIN_RIGHT,
+              bottom: MARGIN_BOTTOM,
+              left: MARGIN_LEFT,
+              header: MARGIN_HEADER,
+              footer: MARGIN_FOOTER,
+            },
+            pageNumbers: {
+              start: 1,
+              formatType: NumberFormat.UPPER_ROMAN,
+            },
+          },
+        },
+        footers: {
+          default: buildPageNumberFooter(),
+        },
+        children: tocElements,
       },
       {
         properties: {

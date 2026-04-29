@@ -13,7 +13,7 @@ description: Use this skill for BUPT thesis workflows: run structured Markdown c
 
 - 检查任意论文 Markdown 文件的结构、标题、摘要、图表题注与编号
 - 提取完整多级标题，供 LLM 按项目约定做语义复核
-- 将指定 Markdown 文件导出为 DOCX，并拼接封面与诚信声明
+- 将指定 Markdown 文件导出为 DOCX，并简单拼接新版封面与诚信声明
 
 当前工具链为 JS-only：检查、正文导出、封面组装均使用 Node.js 脚本完成。
 
@@ -69,7 +69,7 @@ node scripts/generate_thesis.js --input <markdown-path> --output <body-docx-path
 ### 3. 只组装封面与正文
 
 ```bash
-node bupt-thesis-helper/scripts/compose_docx.js --cover <cover-docx-path> --body <body-docx-path> --output <final-docx-path> --cover-data <cover-json-path>
+node bupt-thesis-helper/scripts/compose_docx.js --cover <cover-docx-path> --body <body-docx-path> --output <final-docx-path>
 ```
 
 ### 4. 一键导出最终 DOCX
@@ -81,14 +81,13 @@ node scripts/md2doc.js --input <markdown-path> --output <final-docx-path>
 可选参数：
 
 - `--cover <cover-docx-path>`
-- `--cover-data <cover-json-path>`
 - `--skip-check`
 - `--force`
 
 说明：
 
 - 若未指定 `--output`，默认输出为“输入 Markdown 同目录下的同名 `.docx`”
-- 若未指定 `--cover-data`，脚本会在输入 Markdown 同目录下自动补出 `<markdown-name>.cover.json` 模板
+- 当前使用新版封面+诚信声明模板做简单拼接
 
 ## What the Check Script Covers
 
@@ -126,7 +125,7 @@ node scripts/md2doc.js --input <markdown-path> --output <final-docx-path>
 1. 运行检查
 2. 确认无阻断错误，或用户明确允许 `--force`
 3. 运行 `md2doc.js --input <markdown-path> --output <final-docx-path>`
-4. 打开结果，重点检查目录、标题、图表题注、公式、封面填写区与诚信声明页
+4. 打开结果，重点检查目录、标题、图表题注、公式、封面与诚信声明页
 
 ### 场景 C：只想复核标题树
 
@@ -143,7 +142,6 @@ node scripts/md2doc.js --input <markdown-path> --output <final-docx-path>
 - `references/markdown-writing-spec.md`：写作与导出规则说明
 - `references/add-references.md`：参考文献补充 SOP
 - `assets/论文封面+诚信声明.docx`：封面模板
-- `assets/thesis.cover.example.json`：封面信息模板
 
 ## Boundaries
 
