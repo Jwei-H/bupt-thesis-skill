@@ -3,12 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 
-const HEADING_RE = /^(#{1,4})\s+(.+?)\s*$/;
+const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 const IMAGE_RE = /^!\[([^\]]*)\]\(([^)]+)\)\s*$/;
-const TABLE_CAPTION_RE = /^表\s+(\d+(?:-\d+)+)\s+.+表\s*$/;
-const IMAGE_CAPTION_RE = /^图\s+(\d+(?:-\d+)+)\s+.+图\s*$/;
+const TABLE_CAPTION_RE = /^表\s*(\d+(?:-\d+)+)\s+(.+表)\s*$/;
+const IMAGE_CAPTION_RE = /^图\s*(\d+(?:-\d+)+)\s+(.+图)\s*$/;
+const TABLE_CAPTION_STRICT_RE = /^表\d+-\d+ {2}[^。！？；：,.，、]+表\s*$/;
+const IMAGE_CAPTION_STRICT_RE = /^图\d+-\d+ {2}[^。！？；：,.，、]+图\s*$/;
 const SECTION2_RE = /^(\d+)\.(\d+)\s+.+$/;
 const SECTION3_RE = /^(\d+)\.(\d+)\.(\d+)\s+.+$/;
+const SECTION4_TEXT_RE = /^\d+\.\d+\.\d+\.\d+(?:\s+|\S)/;
 const KEYWORDS_ZH_RE = /^(\*\*关键词\*\*|关键词)/;
 const KEYWORDS_EN_RE = /^(\*\*KEY WORDS\*\*|KEY WORDS)/i;
 const LIST_RE = /^(\s*)([-*]|\d+\.)\s+/;
@@ -246,6 +249,17 @@ function checkHeadingRules(blocks, issues) {
   }
 
   for (const heading of headings) {
+    if (heading.level >= 5 || SECTION4_TEXT_RE.test(heading.text)) {
+      addIssue(
+        issues,
+        'error',
+        'heading.level4_forbidden',
+        heading.line,
+        `本科论文不应出现四级及以下标题：\`${heading.text}\`。`,
+        '三级标题下如需分点，使用正文中的“1、2、3”或列表，不再继续增加标题层级。',
+      );
+    }
+
     if (prevLevel !== null && heading.level > prevLevel + 1) {
       addIssue(
         issues,
@@ -265,7 +279,7 @@ function checkHeadingRules(blocks, issues) {
         currentChapter = chapter;
         currentSection2 = null;
         if (chapterNumbers.length >= 2 && chapterNumbers[chapterNumbers.length - 1] !== chapterNumbers[chapterNumbers.length - 2] + 1) {
-          addIssue(issues, 'warning', 'heading.chapter_sequence', heading.line, `章标题序号可能不连续：当前为第 ${chapter} 章。`);
+          addIssue(issues, 'error', 'heading.chapter_sequence', heading.line, `章标题序号不连续：上一章为第 ${chapterNumbers[chapterNumbers.length - 2]} 章，当前为第 ${chapter} 章。`);
         }
       } else if (!['摘要', 'ABSTRACT', '目录', '参考文献', '致谢', '附录'].includes(heading.text)) {
         addIssue(
@@ -294,8 +308,10 @@ function checkHeadingRules(blocks, issues) {
         addIssue(issues, 'error', 'heading.level2_chapter_mismatch', heading.line, `二级标题章号为 ${chapterNo}，但当前章为 ${currentChapter}。`);
       }
       const last = lastSection2Index.get(chapterNo);
-      if (last !== undefined && sectionNo <= last) {
-        addIssue(issues, 'warning', 'heading.level2_order', heading.line, `二级标题编号可能未递增：当前为 ${chapterNo}.${sectionNo}。`);
+      if (last === undefined && sectionNo !== 1) {
+        addIssue(issues, 'error', 'heading.level2_sequence', heading.line, `第 ${chapterNo} 章二级标题应从 ${chapterNo}.1 开始，当前为 ${chapterNo}.${sectionNo}。`);
+      } else if (last !== undefined && sectionNo !== last + 1) {
+        addIssue(issues, 'error', 'heading.level2_sequence', heading.line, `二级标题编号不连续：上一节为 ${chapterNo}.${last}，当前为 ${chapterNo}.${sectionNo}。`);
       }
       lastSection2Index.set(chapterNo, sectionNo);
       currentSection2 = [chapterNo, sectionNo];
@@ -325,11 +341,36 @@ function checkHeadingRules(blocks, issues) {
         }
         const key = `${chapterNo}.${sectionNo}`;
         const last = lastSection3Index.get(key);
-        if (last !== undefined && subNo <= last) {
-          addIssue(issues, 'warning', 'heading.level3_order', heading.line, `三级标题编号可能未递增：当前为 ${chapterNo}.${sectionNo}.${subNo}。`);
+        if (last === undefined && subNo !== 1) {
+          addIssue(issues, 'error', 'heading.level3_sequence', heading.line, `三级标题应从 ${chapterNo}.${sectionNo}.1 开始，当前为 ${chapterNo}.${sectionNo}.${subNo}。`);
+        } else if (last !== undefined && subNo !== last + 1) {
+          addIssue(issues, 'error', 'heading.level3_sequence', heading.line, `三级标题编号不连续：上一节为 ${chapterNo}.${sectionNo}.${last}，当前为 ${chapterNo}.${sectionNo}.${subNo}。`);
         }
         lastSection3Index.set(key, subNo);
       }
+    }
+  }
+
+  const chapterHeadings = headings
+    .filter((heading) => heading.level === 2 && parseChapterNumber(heading.text) !== null)
+    .map((heading) => ({ ...heading, chapter: parseChapterNumber(heading.text) }));
+  for (let index = 1; index < chapterHeadings.length - 1; index += 1) {
+    const current = chapterHeadings[index];
+    const next = chapterHeadings[index + 1];
+    const hasSummary = headings.some((heading) => (
+      heading.line > current.line
+        && heading.line < next.line
+        && /本章小结/.test(heading.text)
+    ));
+    if (!hasSummary) {
+      addIssue(
+        issues,
+        'error',
+        'heading.chapter_summary_missing',
+        current.line,
+        `第 ${current.chapter} 章缺少“本章小结”。`,
+        '除第一章和最后一章外，其余各章末尾应设置“本章小结”小节。',
+      );
     }
   }
 
@@ -416,6 +457,9 @@ function checkAbstractRules(lines, blocks, issues) {
 
 function recordCaption(issues, captionMap, captionType, lineNo, captionText, expectedChapter) {
   const regex = captionType === 'image' ? IMAGE_CAPTION_RE : TABLE_CAPTION_RE;
+  const strictRegex = captionType === 'image' ? IMAGE_CAPTION_STRICT_RE : TABLE_CAPTION_STRICT_RE;
+  const label = captionType === 'image' ? '图片' : '表格';
+  const prefix = captionType === 'image' ? '图' : '表';
   const match = captionText.match(regex);
   if (!match) {
     addIssue(
@@ -423,18 +467,62 @@ function recordCaption(issues, captionMap, captionType, lineNo, captionText, exp
       'error',
       `caption.${captionType}_format`,
       lineNo,
-      `${captionType === 'image' ? '图片' : '表格'}题注格式不合法：\`${captionText}\`。`,
+      `${label}题注格式不合法：\`${captionText}\`。`,
+      `使用 \`${prefix}X-Y  标题${prefix}\`，编号与标题之间保留两个半角空格，题注末尾不加标点。`,
     );
     return;
   }
   const number = match[1];
+  if (!strictRegex.test(captionText)) {
+    addIssue(
+      issues,
+      'error',
+      `caption.${captionType}_format_strict`,
+      lineNo,
+      `${label}题注不符合新版模板格式：\`${captionText}\`。`,
+      `改为 \`${prefix}${number}  ${match[2].replace(/[。！？；：,.，、]+$/u, '')}\`。`,
+    );
+  }
   if (captionMap.has(number)) {
-    addIssue(issues, 'warning', `caption.${captionType}_duplicate`, lineNo, `${captionType === 'image' ? '图片' : '表格'}题注编号 \`${number}\` 重复。`);
+    addIssue(issues, 'error', `caption.${captionType}_duplicate`, lineNo, `${label}题注编号 \`${number}\` 重复。`);
   } else {
-    captionMap.set(number, lineNo);
+    captionMap.set(number, { line: lineNo, text: captionText });
   }
   if (expectedChapter !== null && Number(number.split('-')[0]) !== expectedChapter) {
-    addIssue(issues, 'warning', `caption.${captionType}_chapter_mismatch`, lineNo, `题注编号 \`${number}\` 的章号与当前位置所在章节 ${expectedChapter} 不一致。`);
+    addIssue(issues, 'error', `caption.${captionType}_chapter_mismatch`, lineNo, `题注编号 \`${number}\` 的章号与当前位置所在章节 ${expectedChapter} 不一致。`);
+  }
+}
+
+function checkSequentialNumbering(issues, numberMap, type, label) {
+  const byChapter = new Map();
+  for (const [number, meta] of numberMap.entries()) {
+    const [chapterText, indexText] = number.split('-');
+    const chapter = Number(chapterText);
+    const itemIndex = Number(indexText);
+    if (!Number.isInteger(chapter) || !Number.isInteger(itemIndex)) {
+      continue;
+    }
+    if (!byChapter.has(chapter)) {
+      byChapter.set(chapter, []);
+    }
+    byChapter.get(chapter).push({ number, itemIndex, line: meta.line });
+  }
+
+  for (const [chapter, items] of byChapter.entries()) {
+    items.sort((a, b) => a.itemIndex - b.itemIndex || a.line - b.line);
+    for (let index = 0; index < items.length; index += 1) {
+      const expected = index + 1;
+      if (items[index].itemIndex !== expected) {
+        addIssue(
+          issues,
+          'error',
+          `${type}.sequence`,
+          items[index].line,
+          `${label}编号不连续：第 ${chapter} 章期望 ${chapter}-${expected}，实际为 ${items[index].number}。`,
+        );
+        break;
+      }
+    }
   }
 }
 
@@ -508,6 +596,9 @@ function checkMediaRules(markdownPath, blocks, issues) {
       }
     }
   });
+
+  checkSequentialNumbering(issues, imageNumbers, 'caption.image', '图片');
+  checkSequentialNumbering(issues, tableNumbers, 'caption.table', '表格');
 }
 
 function checkFormulaRules(blocks, issues) {
@@ -546,9 +637,9 @@ function checkFormulaRules(blocks, issues) {
     const key = numPart;
 
     if (formulaNumbers.has(key)) {
-      addIssue(issues, 'warning', 'formula.duplicate_label', block.line, `公式编号 \`${label}\` 重复。`);
+      addIssue(issues, 'error', 'formula.duplicate_label', block.line, `公式编号 \`${label}\` 重复。`);
     } else {
-      formulaNumbers.set(key, block.line);
+      formulaNumbers.set(key, { line: block.line, text: label });
     }
 
     const chapter = nearestChapter(headings, block.line);
@@ -562,6 +653,8 @@ function checkFormulaRules(blocks, issues) {
       );
     }
   });
+
+  checkSequentialNumbering(issues, formulaNumbers, 'formula', '公式');
 }
 
 function checkReferenceRules(lines, blocks, issues) {
@@ -573,14 +666,16 @@ function checkReferenceRules(lines, blocks, issues) {
     }
   });
 
-  // 检查参考文献数量（至少10篇）
-  if (refDefs.length > 0 && refDefs.length < 10) {
+  // 新版模板要求参考文献不少于 20 篇。
+  if (refDefs.length === 0) {
+    addIssue(issues, 'error', 'reference.none', 1, '未找到任何参考文献定义。', '请在文末使用 `[^N]: ...` 定义参考文献。');
+  } else if (refDefs.length < 20) {
     addIssue(
       issues,
-      'warning',
+      'error',
       'reference.count_low',
       1,
-      `参考文献共 ${refDefs.length} 篇，官方要求每篇论文至少查阅 10 篇文献资料。`,
+      `参考文献共 ${refDefs.length} 篇，新版模板要求不低于 20 篇。`,
     );
   }
 
@@ -606,12 +701,39 @@ function checkReferenceRules(lines, blocks, issues) {
 
   // 检查参考文献标题是否存在
   const hasRefSection = blocks.some((block) => block.type === 'heading' && block.level === 2 && block.text === '参考文献');
-  if (refDefs.length > 0 && !hasRefSection) {
-    addIssue(issues, 'warning', 'reference.section_missing', 1, '存在参考文献定义但未找到 `## 参考文献` 标题。');
+  if (!hasRefSection) {
+    addIssue(issues, 'error', 'reference.section_missing', 1, '未找到 `## 参考文献` 标题。');
   }
 }
 
-function checkSpecialSections() {
+function checkSpecialSections(blocks, issues) {
+  let currentTopHeading = '';
+  const bannedPronounRe = /(我们|咱们|(?<![A-Za-z])我(?![A-Za-z]))/u;
+
+  for (const block of blocks) {
+    if (block.type === 'heading' && block.level === 2) {
+      currentTopHeading = block.text;
+      continue;
+    }
+    if (!['paragraph', 'list'].includes(block.type)) {
+      continue;
+    }
+    if (['致谢', '参考文献', '附录'].includes(currentTopHeading)) {
+      continue;
+    }
+    const text = block.text || '';
+    const match = text.match(bannedPronounRe);
+    if (match) {
+      addIssue(
+        issues,
+        'error',
+        'content.first_person_pronoun',
+        block.line,
+        `正文中不应使用第一人称代词“${match[1]}”。`,
+        '根据上下文改为“本文”“本章”“本节”或“本小节”。致谢部分例外。',
+      );
+    }
+  }
 }
 
 function runChecks(markdownPathInput) {
