@@ -5,14 +5,13 @@
 ### 功能简述
 
 - **结构化检查**: 对论文的标题层级、图表题注与编号、摘要格式等进行详尽的规范校验。
-- **辅助论文修改**：辅助润色、调整论文格式，包括补充参考文献等。
 - **一键导出**: 将合规的 Markdown 正文渲染为排版良好的 DOCX 文件。
 - **高级渲染支持**: 提供表格自动宽度分配、公式渲染、Mermaid/PlantUML 内联图表渲染等多种 Markdown 扩展功能。
 
 ### 目录结构
 
 - `bupt-thesis-helper/scripts/`：核心 Node.js 脚本（包含结构检查、DOCX 渲染及封面组装等逻辑）。
-- `bupt-thesis-helper/assets/`：封面及声明的 DOCX 模板和配置例子。
+- `bupt-thesis-helper/assets/`：封面及声明的 DOCX 模板。
 - `bupt-thesis-helper/references/`：关于排版、参考及各种写作规约的参考文档。
 - `bupt-thesis-helper/SKILL.md`：详细描述了该 Skill 的工作流、调用指引以及前置条件，供 Agent 查阅参考。
 
